@@ -6,10 +6,10 @@ import atexit
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
-from xian_linter.linter import LintError_Model, lint_code_inline  # type: ignore
+from xian_linter import LintErrorModel, lint_code_inline
 
 
-def _format_error(error: LintError_Model) -> str:
+def _format_error(error: LintErrorModel) -> str:
     position = getattr(error, "position", None)
     message = getattr(error, "message", "")
 
@@ -17,7 +17,7 @@ def _format_error(error: LintError_Model) -> str:
         return message
 
     line = getattr(position, "line", None)
-    column = getattr(position, "column", None)
+    column = getattr(position, "column", getattr(position, "col", None))
 
     location = ""
     if line is not None:

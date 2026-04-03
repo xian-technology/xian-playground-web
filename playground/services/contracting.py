@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import decimal
 import json
-import re
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,11 +11,10 @@ from typing import Any, Dict, List
 
 from contracting import constants
 from contracting.client import ContractingClient
-from contracting.storage import hdf5
+from contracting.names import is_safe_contract_name
 from contracting.storage.driver import Driver
-from contracting.stdlib.bridge.decimal import ContractingDecimal
-from contracting.stdlib.bridge.time import Datetime
-from xian_py.decompiler import ContractDecompiler
+from xian_runtime_types.decimal import ContractingDecimal
+from xian_runtime_types.time import Datetime
 
 from .environment import stringify_environment_value
 
@@ -70,13 +68,31 @@ def _default_storage_home() -> Path:
     return storage
 
 
-_CONTRACT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+def _valid_contract_name(
+    name: str,
+    *,
+    require_con_prefix: bool = True,
+) -> bool:
+    """Return True if the contract name matches current Xian submission rules."""
+
+    if not is_safe_contract_name(name):
+        return False
+    if require_con_prefix and not name.startswith("con_"):
+        return False
+    return True
 
 
-def _valid_contract_name(name: str) -> bool:
-    """Return True if the contract name is safe for storage."""
-
-    return bool(_CONTRACT_NAME_PATTERN.fullmatch(name))
+def _contract_name_error(*, require_con_prefix: bool = True) -> str:
+    if require_con_prefix:
+        return (
+            "Contract name must start with 'con_' and contain only lowercase "
+            "ASCII letters, digits, and underscores, up to 64 characters."
+        )
+    return (
+        "Contract name must start with a lowercase ASCII letter and contain "
+        "only lowercase ASCII letters, digits, and underscores, up to 64 "
+        "characters."
+    )
 
 
 def _is_export_decorator(node: ast.AST) -> bool:
@@ -318,14 +334,20 @@ class ContractingService:
             raise ValueError("Contract name cannot be empty.")
         if clean_name == "submission":
             raise ValueError("Contract name 'submission' is reserved.")
-        if not _valid_contract_name(clean_name):
-            raise ValueError(
-                "Contract name must contain only letters, digits, or underscores and be at most 64 characters."
-            )
         if not code or not code.strip():
             raise ValueError("Contract code cannot be empty.")
 
         with self._lock:
+            require_con_prefix = self._client.signer != "sys"
+            if not _valid_contract_name(
+                clean_name,
+                require_con_prefix=require_con_prefix,
+            ):
+                raise ValueError(
+                    _contract_name_error(
+                        require_con_prefix=require_con_prefix
+                    )
+                )
             self._client.submit(code, name=clean_name)
             self._driver.commit()
 
@@ -340,21 +362,23 @@ class ContractingService:
                 if not isinstance(entries, dict):
                     raise ValueError(f"State for '{contract}' must be an object mapping keys to values.")
 
-                existing_keys: set[str] = set()
-                contract_file = self._driver.contract_state / contract
-                if contract_file.exists():
-                    existing_keys = {
-                        key
-                        for key in hdf5.get_all_keys_from_file(str(contract_file))
-                        if isinstance(key, str) and not key.startswith("__")
-                    }
+                existing_keys = {
+                    key.removeprefix(f"{contract}{constants.INDEX_SEPARATOR}")
+                    for key in self._driver.keys_from_disk(f"{contract}{constants.INDEX_SEPARATOR}")
+                    if isinstance(key, str)
+                    and not key.removeprefix(f"{contract}{constants.INDEX_SEPARATOR}").startswith("__")
+                }
 
                 provided_keys: set[str] = set()
                 for key, value in entries.items():
                     if not isinstance(key, str):
                         raise ValueError(f"State keys for '{contract}' must be strings.")
 
-                    full_key = contract if key == "" else f"{contract}.{key}"
+                    full_key = (
+                        contract
+                        if key == ""
+                        else f"{contract}{constants.INDEX_SEPARATOR}{key}"
+                    )
 
                     if value is None:
                         self._driver.delete(full_key)
@@ -364,7 +388,11 @@ class ContractingService:
 
                 missing_keys = existing_keys - provided_keys
                 for key in missing_keys:
-                    full_key = contract if key == "" else f"{contract}.{key}"
+                    full_key = (
+                        contract
+                        if key == ""
+                        else f"{contract}{constants.INDEX_SEPARATOR}{key}"
+                    )
                     self._driver.delete(full_key)
 
             self._driver.commit()
@@ -379,7 +407,9 @@ class ContractingService:
             return []
 
         with self._lock:
-            source = self._driver.get_contract(contract)
+            source = self._driver.get_contract_source(
+                contract
+            ) or self._driver.get_contract(contract)
 
         if not source:
             return []
@@ -392,7 +422,9 @@ class ContractingService:
             return []
 
         with self._lock:
-            source = self._driver.get_contract(contract)
+            source = self._driver.get_contract_source(
+                contract
+            ) or self._driver.get_contract(contract)
 
         if not source:
             return []
@@ -405,16 +437,21 @@ class ContractingService:
             raise ValueError("Contract name is required.")
 
         with self._lock:
-            source = self._driver.get_contract(clean_name)
+            source = self._driver.get_contract_source(clean_name)
+            runtime_code = self._driver.get_contract(clean_name)
 
-        if source is None:
+        if source is None and runtime_code is None:
             raise ValueError(f"Contract '{clean_name}' is not deployed.")
 
-        exports = self._parse_exports(source)
-        decompiled = self._safe_decompile(source)
+        display_source = source or runtime_code or ""
+        exports = self._parse_exports(display_source)
+        decompiled = self._safe_decompile(
+            runtime_code,
+            fallback=display_source,
+        )
         return ContractDetails(
             name=clean_name,
-            source=source,
+            source=display_source,
             decompiled_source=decompiled,
             exports=exports,
         )
@@ -444,32 +481,22 @@ class ContractingService:
         with self._lock:
             contract_files = self._driver.get_contract_files()
             for name in contract_files:
-                file_path = self._driver.contract_state / name
-                keys = hdf5.get_all_keys_from_file(str(file_path))
                 snapshot[name] = {
-                    key: _serialize_value(value)
-                    for key in keys
-                    if (show_internal or not key.startswith("__"))
-                    if (value := hdf5.get_value_from_disk(
-                        str(file_path),
-                        key.replace(constants.DELIMITER, constants.HDF5_GROUP_SEPARATOR),
-                    )) is not None
+                    key.removeprefix(f"{name}{constants.INDEX_SEPARATOR}"): _serialize_value(value)
+                    for key, value in self._driver.items(f"{name}{constants.INDEX_SEPARATOR}").items()
+                    if (
+                        show_internal
+                        or not key.removeprefix(f"{name}{constants.INDEX_SEPARATOR}").startswith("__")
+                    )
+                    if value is not None
                 }
 
             runtime_snapshot: Dict[str, Dict[str, Any]] = {}
-            for path in sorted(self._driver.run_state.iterdir()):
-                if not path.is_file():
+            for key, value in self._driver.get_run_state().items():
+                contract, _, suffix = key.partition(constants.INDEX_SEPARATOR)
+                if not show_internal and suffix.startswith("__"):
                     continue
-                keys = hdf5.get_all_keys_from_file(str(path))
-                runtime_snapshot[path.name] = {
-                    key: _serialize_value(value)
-                    for key in keys
-                    if (show_internal or not key.startswith("__"))
-                    if (value := hdf5.get_value_from_disk(
-                        str(path),
-                        key.replace(constants.DELIMITER, constants.HDF5_GROUP_SEPARATOR),
-                    )) is not None
-                }
+                runtime_snapshot.setdefault(contract, {})[suffix] = _serialize_value(value)
 
             if runtime_snapshot:
                 snapshot["__runtime__"] = runtime_snapshot
@@ -552,9 +579,8 @@ class ContractingService:
         return exports
 
     @staticmethod
-    def _safe_decompile(source: str) -> str:
-        """Attempt to decompile contract source, returning trimmed output or fallback."""
-        try:
-            return ContractDecompiler().decompile(source)
-        except Exception:
-            return source
+    def _safe_decompile(runtime_code: str | None, *, fallback: str = "") -> str:
+        """Return compiled runtime code when available, otherwise fallback text."""
+        if runtime_code and runtime_code.strip():
+            return runtime_code
+        return fallback

@@ -868,7 +868,7 @@ class PlaygroundState(rx.State):
             if isinstance(result, dict):
                 position = result.get("position") or {}
                 line = position.get("line")
-                column = position.get("column")
+                column = position.get("column", position.get("col"))
                 message = result.get("message", "")
                 location = ""
                 if line is not None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 from contextlib import contextmanager
+from unittest.mock import patch
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -58,10 +59,12 @@ class MiddlewareSecurityTest(unittest.TestCase):
             self.assertIsNone(_env_secure_cookie_override())
 
     def test_infer_secure_prefers_forwarded_proto(self) -> None:
-        req = _make_request(scheme="http", headers={"x-forwarded-proto": "https"})
-        self.assertTrue(_infer_secure_cookie(req))
-        req2 = _make_request(scheme="http")
-        self.assertFalse(_infer_secure_cookie(req2))
+        with patch("playground.middleware.get_config") as mock_get_config:
+            mock_get_config.return_value.deploy_url = ""
+            req = _make_request(scheme="http", headers={"x-forwarded-proto": "https"})
+            self.assertTrue(_infer_secure_cookie(req))
+            req2 = _make_request(scheme="http")
+            self.assertFalse(_infer_secure_cookie(req2))
 
     def test_issue_cookie_marks_secure_when_https(self) -> None:
         request = _make_request(scheme="https")

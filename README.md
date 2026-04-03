@@ -4,7 +4,7 @@ An interactive Reflex-based web playground for the Xian Contracting engine. User
 
 ## Prerequisites
 
-- Python **3.11** (strictly required by the local `pyproject.toml` and `xian-contracting`).
+- Python **3.12** (required by the current `pyproject.toml`, `xian-tech-contracting`, and `xian-tech-linter`).
 - [Poetry](https://python-poetry.org/docs/#installation) for dependency management.
 - Node.js ≥ 18 **or** Bun ≥ 1.1 (Reflex builds the React frontend via whichever runtime is on your `PATH`).
 - A compiler toolchain for any transitive dependencies (e.g., system `make`, `gcc`, `pkg-config`).
@@ -51,7 +51,19 @@ On the production server we override ports and other flags via CLI arguments (se
 poetry install
 ```
 
-This installs the Reflex app plus the editable `xian-contracting` package located in the `xian-contracting/` subdirectory.
+The project currently resolves its Xian dependencies as editable sibling checkouts:
+
+- `../xian-contracting` as `xian-tech-contracting`
+- `../xian-linter` as `xian-tech-linter`
+- `../xian-py` as `xian-tech-py`
+
+Keep those repositories present next to `xian-playground-web` when working from source.
+
+## Contract naming
+
+- User-submitted contracts now follow current `submission` contract rules: names must start with `con_`.
+- All contract names must stay lowercase and may contain only ASCII letters, digits, and underscores, up to 64 characters.
+- The only exception is when the sandbox signer is explicitly set to `sys`, which mirrors the system-contract path in `xian-contracting`.
 
 ## Running the app
 

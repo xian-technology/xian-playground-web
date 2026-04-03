@@ -757,13 +757,13 @@ def editor_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
     return card(
         section_header(
             "Write Contract",
-            "Write a Python smart contract, pick a unique name, and deploy it into the local sandbox.",
+            "Write a Python smart contract, pick a unique `con_` name, and deploy it into the local sandbox.",
             panel_id="write",
             icon="file-pen",
         ),
         panel_stack(
             styled_input(
-                placeholder="Contract name",
+                placeholder="con_my_contract",
                 value=PlaygroundState.contract_name,
                 on_change=PlaygroundState.update_contract_name,
                 width="100%",

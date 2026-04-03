@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime as PyDatetime
 
-from contracting.stdlib.bridge.time import Datetime as ContractingDatetime
+from xian_runtime_types.time import Datetime as ContractingDatetime
 
 
 def stringify_environment_value(value: object) -> str:
