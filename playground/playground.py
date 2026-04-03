@@ -1474,6 +1474,72 @@ def fullscreen_overlay() -> rx.Component:
     )
 
 
+def loading_overlay() -> rx.Component:
+    spinner_style = """
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0% { opacity: 0.9; transform: translateY(0px); }
+  50% { opacity: 0.6; transform: translateY(-4px); }
+  100% { opacity: 0.9; transform: translateY(0px); }
+}
+"""
+
+    return rx.cond(
+        PlaygroundState.bootstrapping,
+        rx.fragment(
+            rx.el.style(spinner_style),
+            rx.box(
+                rx.vstack(
+                    rx.box(
+                        rx.icon(
+                            tag="loader",
+                            size=28,
+                            color=COLORS["accent_cyan"],
+                            style={"animation": "spin 1s linear infinite"},
+                        ),
+                        width="56px",
+                        height="56px",
+                        border=f"1px solid {COLORS['border']}",
+                        border_radius="50%",
+                        display="grid",
+                        place_items="center",
+                        background=COLORS["bg_secondary"],
+                        box_shadow="0 10px 30px rgba(0, 0, 0, 0.35)",
+                    ),
+                    rx.heading(
+                        "Preparing your session",
+                        size="5",
+                        color=COLORS["text_primary"],
+                    ),
+                    rx.text(
+                        "Restoring contracts, state, and environment before the workspace becomes interactive.",
+                        color=COLORS["text_secondary"],
+                        size="2",
+                        text_align="center",
+                        style={"animation": "pulse 1.8s ease-in-out infinite"},
+                        max_width="30rem",
+                    ),
+                    spacing="4",
+                    align_items="center",
+                ),
+                position="fixed",
+                inset="0",
+                z_index="1200",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+                padding="24px",
+                background="rgba(10, 10, 11, 0.92)",
+                backdrop_filter="blur(6px)",
+            ),
+        ),
+        rx.fragment(),
+    )
+
+
 def not_found_page() -> rx.Component:
     message = (
         "The page you’re looking for doesn’t exist or has been moved. "
@@ -1657,6 +1723,7 @@ def index() -> rx.Component:
             spacing="0",
             width="100%",
         ),
+        loading_overlay(),
         fullscreen_overlay(),
         background=COLORS["bg_primary"],
         min_height="100vh",

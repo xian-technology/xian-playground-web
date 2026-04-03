@@ -79,6 +79,8 @@ def _filter_visible_contracts(
 class PlaygroundState(rx.State):
     """Global Reflex state powering the playground UI."""
 
+    bootstrapping: bool = True
+    _bootstrap_remaining: int = 0
     code_editor: str = DEFAULT_CONTRACT
     code_editor_revision: int = 0
     contract_name: str = DEFAULT_CONTRACT_NAME
@@ -125,6 +127,8 @@ class PlaygroundState(rx.State):
     activity_log_view_key: str = "activity-log"
 
     def on_load(self):
+        self.bootstrapping = True
+        self._bootstrap_remaining = 0
         session_id = self._cookie_session_id()
         if not session_id:
             self.session_error = "Session cookie missing. Issuing a fresh session."
@@ -150,6 +154,7 @@ class PlaygroundState(rx.State):
             type(self).refresh_state,
             type(self).refresh_environment,
         ]
+        self._start_bootstrap(len(actions))
         return actions
 
     def _cookie_session_id(self) -> str:
@@ -203,6 +208,24 @@ class PlaygroundState(rx.State):
     def _refresh_activity_log_panel(self):
         seed = f"{self.session_id or 'log'}-{time.time():.6f}"
         self.activity_log_view_key = seed
+
+    def _start_bootstrap(self, steps: int) -> None:
+        self.bootstrapping = True
+        self._bootstrap_remaining = max(0, steps)
+
+    def _add_bootstrap_steps(self, steps: int) -> None:
+        if not self.bootstrapping:
+            return
+        self._bootstrap_remaining += max(0, steps)
+
+    def _finish_bootstrap_step(self) -> None:
+        if not self.bootstrapping:
+            return
+        if self._bootstrap_remaining > 0:
+            self._bootstrap_remaining -= 1
+        if self._bootstrap_remaining <= 0:
+            self._bootstrap_remaining = 0
+            self.bootstrapping = False
 
     def _log_event(
         self,
@@ -394,72 +417,83 @@ class PlaygroundState(rx.State):
     def refresh_contracts(self):
         session_id = self._require_session()
         if not session_id:
+            self._finish_bootstrap_step()
             return []
-        all_contracts = session_runtime.list_contracts(session_id)
-        visible_contracts = _filter_visible_contracts(
-            all_contracts,
-            show_system_contracts=self.show_system_contracts,
-        )
-        self.hidden_system_contract_count = (
-            0
-            if self.show_system_contracts
-            else sum(
-                1 for name in all_contracts
-                if _is_system_contract_name(name)
+        try:
+            all_contracts = session_runtime.list_contracts(session_id)
+            visible_contracts = _filter_visible_contracts(
+                all_contracts,
+                show_system_contracts=self.show_system_contracts,
             )
-        )
-        self.deployed_contracts = visible_contracts
+            self.hidden_system_contract_count = (
+                0
+                if self.show_system_contracts
+                else sum(
+                    1 for name in all_contracts
+                    if _is_system_contract_name(name)
+                )
+            )
+            self.deployed_contracts = visible_contracts
 
-        if not visible_contracts:
-            self.selected_contract = ""
-            self.available_functions = []
-            self.function_name = ""
-            self.load_selected_contract = ""
-            self.loaded_contract_code = ""
-            self.loaded_contract_decompiled = ""
-            self.function_required_params = {}
-            return []
+            if not visible_contracts:
+                self.selected_contract = ""
+                self.available_functions = []
+                self.function_name = ""
+                self.load_selected_contract = ""
+                self.loaded_contract_code = ""
+                self.loaded_contract_decompiled = ""
+                self.function_required_params = {}
+                return []
 
-        if self.selected_contract not in visible_contracts:
-            self.selected_contract = visible_contracts[0]
-            self.kwargs_input = DEFAULT_KWARGS_INPUT
+            if self.selected_contract not in visible_contracts:
+                self.selected_contract = visible_contracts[0]
+                self.kwargs_input = DEFAULT_KWARGS_INPUT
 
-        if (
-            not self.load_selected_contract
-            or self.load_selected_contract not in visible_contracts
-        ):
-            self.load_selected_contract = visible_contracts[0]
+            if (
+                not self.load_selected_contract
+                or self.load_selected_contract not in visible_contracts
+            ):
+                self.load_selected_contract = visible_contracts[0]
 
-        return [type(self).refresh_functions, type(self).refresh_loaded_contract]
+            if self.bootstrapping and self._bootstrap_remaining > 0:
+                self._add_bootstrap_steps(2)
+
+            return [type(self).refresh_functions, type(self).refresh_loaded_contract]
+        finally:
+            self._finish_bootstrap_step()
 
     def refresh_functions(self):
         session_id = self._require_session()
         if not session_id:
+            self._finish_bootstrap_step()
             return []
-        if not self.selected_contract:
-            self.available_functions = []
-            self.function_name = ""
-            self.function_required_params = {}
-            return
+        try:
+            if not self.selected_contract:
+                self.available_functions = []
+                self.function_name = ""
+                self.function_required_params = {}
+                return
 
-        exports: List[ContractExportInfo] = session_runtime.get_export_metadata(session_id, self.selected_contract)
-        required_map = {
-            export.name: [
-                param.name for param in (export.parameters or []) if param.required
-            ]
-            for export in exports
-        }
-        self.function_required_params = required_map
+            exports: List[ContractExportInfo] = session_runtime.get_export_metadata(session_id, self.selected_contract)
+            required_map = {
+                export.name: [
+                    param.name for param in (export.parameters or []) if param.required
+                ]
+                for export in exports
+            }
+            self.function_required_params = required_map
 
-        functions = sorted(required_map.keys())
-        self.available_functions = functions
+            functions = sorted(required_map.keys())
+            self.available_functions = functions
 
-        if not functions:
-            self.function_name = ""
-        elif self.function_name not in functions:
-            self.function_name = functions[0]
+            if not functions:
+                self.function_name = ""
+            elif self.function_name not in functions:
+                self.function_name = functions[0]
 
-        self.prefill_kwargs_for_current_function()
+            self.prefill_kwargs_for_current_function()
+        finally:
+            self._finish_bootstrap_step()
 
     def change_loaded_contract(self, value: str):
         self.load_selected_contract = value
@@ -468,22 +502,26 @@ class PlaygroundState(rx.State):
     def refresh_loaded_contract(self):
         session_id = self._require_session()
         if not session_id:
+            self._finish_bootstrap_step()
             return []
-        if not self.load_selected_contract:
-            self.loaded_contract_code = ""
-            self.loaded_contract_decompiled = ""
-            return []
-
         try:
-            details: ContractDetails = session_runtime.get_contract_details(session_id, self.load_selected_contract)
-        except Exception as exc:
-            self.loaded_contract_code = ""
-            self.loaded_contract_decompiled = ""
-            return [rx.toast.error(f"Failed to load contract '{self.load_selected_contract}': {exc}")]
+            if not self.load_selected_contract:
+                self.loaded_contract_code = ""
+                self.loaded_contract_decompiled = ""
+                return []
 
-        self.loaded_contract_code = details.source
-        self.loaded_contract_decompiled = details.decompiled_source
-        return []
+            try:
+                details: ContractDetails = session_runtime.get_contract_details(session_id, self.load_selected_contract)
+            except Exception as exc:
+                self.loaded_contract_code = ""
+                self.loaded_contract_decompiled = ""
+                return [rx.toast.error(f"Failed to load contract '{self.load_selected_contract}': {exc}")]
+
+            self.loaded_contract_code = details.source
+            self.loaded_contract_decompiled = details.decompiled_source
+            return []
+        finally:
+            self._finish_bootstrap_step()
 
     def toggle_load_view(self):
         self.load_view_decompiled = not self.load_view_decompiled
@@ -694,21 +732,29 @@ class PlaygroundState(rx.State):
     def refresh_state(self):
         session_id = self._require_session()
         if not session_id:
+            self._finish_bootstrap_step()
             return []
-        snapshot = session_runtime.dump_state(session_id, self.show_internal_state)
-        self.state_dump = snapshot
-        if not self.state_is_editing:
-            self.state_editor = snapshot
+        try:
+            snapshot = session_runtime.dump_state(session_id, self.show_internal_state)
+            self.state_dump = snapshot
+            if not self.state_is_editing:
+                self.state_editor = snapshot
+        finally:
+            self._finish_bootstrap_step()
 
     def refresh_environment(self):
         session_id = self._require_session()
         if not session_id:
+            self._finish_bootstrap_step()
             return []
-        env = session_runtime.get_environment(session_id)
-        self.environment_editor = {
-            key: stringify_environment_value(env.get(key))
-            for key in ENVIRONMENT_FIELD_KEYS
-        }
+        try:
+            env = session_runtime.get_environment(session_id)
+            self.environment_editor = {
+                key: stringify_environment_value(env.get(key))
+                for key in ENVIRONMENT_FIELD_KEYS
+            }
+        finally:
+            self._finish_bootstrap_step()
 
     def deploy_contract(self):
         session_id = self._require_session()
