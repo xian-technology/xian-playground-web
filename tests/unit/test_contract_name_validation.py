@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,10 @@ value = Variable()
 @export
 def set_value(v: int):
     value.set(v)
+
+@export
+def get() -> int:
+    return value.get()
 
 @construct
 def init():
@@ -86,6 +91,50 @@ class ContractNameValidationTest(unittest.TestCase):
                 details.source.strip(),
                 details.decompiled_source.strip(),
             )
+
+    def test_apply_state_snapshot_rejects_internal_contract_injection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ContractingService(storage_home=Path(tmpdir))
+
+            with self.assertRaises(ValueError):
+                service.apply_state_snapshot(
+                    {
+                        "bad-name": {
+                            "__code__": "@__export('bad')\ndef ping():\n    return 7\n",
+                            "__source__": "@export\ndef ping():\n    return 7\n",
+                        }
+                    }
+                )
+
+            self.assertEqual(service.list_contracts(), ["submission"])
+
+    def test_restore_state_snapshot_round_trips_exported_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ContractingService(storage_home=Path(tmpdir))
+            service.deploy("con_demo_token", SIMPLE_CONTRACT)
+
+            exported = json.loads(service.dump_state(True))
+
+            service.reset_state()
+            service.restore_state_snapshot(exported)
+
+            self.assertEqual(
+                service.call("con_demo_token", "get", {}).as_string(),
+                "1",
+            )
+            details = service.get_contract_details("con_demo_token")
+            self.assertEqual(details.source.strip(), SIMPLE_CONTRACT.strip())
+
+    def test_restore_state_snapshot_ignores_submission_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ContractingService(storage_home=Path(tmpdir))
+
+            snapshot = json.loads(service.dump_state(True))
+            snapshot["submission"]["__source__"] = "@export\ndef nope():\n    return 1\n"
+
+            service.restore_state_snapshot(snapshot)
+
+            self.assertIn("submit_contract", [e.name for e in service.get_export_metadata("submission")])
 
 
 if __name__ == "__main__":

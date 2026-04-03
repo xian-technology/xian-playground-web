@@ -351,6 +351,62 @@ class ContractingService:
             self._client.submit(code, name=clean_name)
             self._driver.commit()
 
+    @staticmethod
+    def _is_internal_state_key(key: str) -> bool:
+        return key.startswith("__")
+
+    def _existing_public_keys(self, contract: str) -> set[str]:
+        prefix = f"{contract}{constants.INDEX_SEPARATOR}"
+        return {
+            key.removeprefix(prefix)
+            for key in self._driver.keys_from_disk(prefix)
+            if isinstance(key, str)
+            and not key.removeprefix(prefix).startswith("__")
+        }
+
+    def _apply_public_contract_state(
+        self,
+        contract: str,
+        entries: Dict[str, Any],
+    ) -> None:
+        existing_keys = self._existing_public_keys(contract)
+        public_entries: list[tuple[str, Any]] = []
+
+        for key, value in entries.items():
+            if not isinstance(key, str):
+                raise ValueError(
+                    f"State keys for '{contract}' must be strings."
+                )
+            if self._is_internal_state_key(key):
+                continue
+            public_entries.append((key, value))
+
+        if not public_entries and entries:
+            return
+
+        provided_keys: set[str] = set()
+        for key, value in public_entries:
+            full_key = (
+                contract
+                if key == ""
+                else f"{contract}{constants.INDEX_SEPARATOR}{key}"
+            )
+
+            if value is None:
+                self._driver.delete(full_key)
+            else:
+                self._driver.set(full_key, value)
+            provided_keys.add(key)
+
+        missing_keys = existing_keys - provided_keys
+        for key in missing_keys:
+            full_key = (
+                contract
+                if key == ""
+                else f"{contract}{constants.INDEX_SEPARATOR}{key}"
+            )
+            self._driver.delete(full_key)
+
     def apply_state_snapshot(self, snapshot: Dict[str, Any]) -> None:
         if not isinstance(snapshot, dict):
             raise ValueError("State snapshot must be a JSON object.")
@@ -359,41 +415,88 @@ class ContractingService:
             for contract, entries in snapshot.items():
                 if contract == "__runtime__":
                     continue
+                if contract == constants.SUBMISSION_CONTRACT_NAME:
+                    continue
                 if not isinstance(entries, dict):
-                    raise ValueError(f"State for '{contract}' must be an object mapping keys to values.")
+                    raise ValueError(
+                        f"State for '{contract}' must be an object mapping "
+                        "keys to values."
+                    )
+                if self._driver.get_contract(contract) is None:
+                    raise ValueError(
+                        f"Contract '{contract}' is not deployed. Deploy it "
+                        "before editing state."
+                    )
 
-                existing_keys = {
-                    key.removeprefix(f"{contract}{constants.INDEX_SEPARATOR}")
-                    for key in self._driver.keys_from_disk(f"{contract}{constants.INDEX_SEPARATOR}")
+                self._apply_public_contract_state(contract, entries)
+
+            self._driver.commit()
+
+    def restore_state_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """Restore a previously exported snapshot without trusting raw internals."""
+        if not isinstance(snapshot, dict):
+            raise ValueError("State snapshot must be a JSON object.")
+
+        with self._lock:
+            for contract, entries in snapshot.items():
+                if contract in {
+                    "__runtime__",
+                    constants.SUBMISSION_CONTRACT_NAME,
+                }:
+                    continue
+                if not isinstance(entries, dict):
+                    raise ValueError(
+                        f"State for '{contract}' must be an object mapping "
+                        "keys to values."
+                    )
+                if not _valid_contract_name(contract):
+                    raise ValueError(
+                        f"Contract '{contract}' cannot be restored because "
+                        "its name is invalid under current submission rules."
+                    )
+
+                source = entries.get("__source__")
+                deployed_source = self._driver.get_contract_source(contract)
+                if deployed_source is None:
+                    if not isinstance(source, str) or not source.strip():
+                        raise ValueError(
+                            f"Contract '{contract}' is missing '__source__' "
+                            "and cannot be restored."
+                        )
+                    self._client.submit(source, name=contract)
+                    self._driver.commit()
+                    deployed_source = self._driver.get_contract_source(contract)
+
+                if (
+                    isinstance(source, str)
+                    and source.strip()
+                    and deployed_source is not None
+                    and deployed_source.strip() != source.strip()
+                ):
+                    raise ValueError(
+                        f"Contract '{contract}' already exists with different "
+                        "source code. Reset the session or remove the "
+                        "contract before importing."
+                    )
+
+            for contract, entries in snapshot.items():
+                if contract in {
+                    "__runtime__",
+                    constants.SUBMISSION_CONTRACT_NAME,
+                }:
+                    continue
+                if not isinstance(entries, dict):
+                    raise ValueError(
+                        f"State for '{contract}' must be an object mapping "
+                        "keys to values."
+                    )
+                public_entries = {
+                    key: value
+                    for key, value in entries.items()
                     if isinstance(key, str)
-                    and not key.removeprefix(f"{contract}{constants.INDEX_SEPARATOR}").startswith("__")
+                    and not self._is_internal_state_key(key)
                 }
-
-                provided_keys: set[str] = set()
-                for key, value in entries.items():
-                    if not isinstance(key, str):
-                        raise ValueError(f"State keys for '{contract}' must be strings.")
-
-                    full_key = (
-                        contract
-                        if key == ""
-                        else f"{contract}{constants.INDEX_SEPARATOR}{key}"
-                    )
-
-                    if value is None:
-                        self._driver.delete(full_key)
-                    else:
-                        self._driver.set(full_key, value)
-                    provided_keys.add(key)
-
-                missing_keys = existing_keys - provided_keys
-                for key in missing_keys:
-                    full_key = (
-                        contract
-                        if key == ""
-                        else f"{contract}{constants.INDEX_SEPARATOR}{key}"
-                    )
-                    self._driver.delete(full_key)
+                self._apply_public_contract_state(contract, public_entries)
 
             self._driver.commit()
 

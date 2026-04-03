@@ -62,6 +62,20 @@ LOG_LEVEL_COLORS = {
 ENVIRONMENT_FIELD_KEYS = [field["key"] for field in ENVIRONMENT_FIELDS]
 FULLSCREEN_PANELS = {"write", "load", "execute", "state"}
 
+
+def _is_system_contract_name(name: str) -> bool:
+    return not (name or "").startswith("con_")
+
+
+def _filter_visible_contracts(
+    contracts: List[str],
+    *,
+    show_system_contracts: bool,
+) -> List[str]:
+    if show_system_contracts:
+        return list(contracts)
+    return [name for name in contracts if not _is_system_contract_name(name)]
+
 class PlaygroundState(rx.State):
     """Global Reflex state powering the playground UI."""
 
@@ -74,6 +88,7 @@ class PlaygroundState(rx.State):
     expert_message: str = ""
     expert_is_error: bool = False
     show_internal_state: bool = False
+    show_system_contracts: bool = False
     environment_editor: dict[str, str] = {
         key: DEFAULT_ENVIRONMENT.get(key, "") for key in ENVIRONMENT_FIELD_KEYS
     }
@@ -89,6 +104,7 @@ class PlaygroundState(rx.State):
     lint_has_results: bool = False
 
     deployed_contracts: List[str] = []
+    hidden_system_contract_count: int = 0
     selected_contract: str = ""
     available_functions: List[str] = []
     function_name: str = ""
@@ -379,10 +395,22 @@ class PlaygroundState(rx.State):
         session_id = self._require_session()
         if not session_id:
             return []
-        contracts = session_runtime.list_contracts(session_id)
-        self.deployed_contracts = contracts
+        all_contracts = session_runtime.list_contracts(session_id)
+        visible_contracts = _filter_visible_contracts(
+            all_contracts,
+            show_system_contracts=self.show_system_contracts,
+        )
+        self.hidden_system_contract_count = (
+            0
+            if self.show_system_contracts
+            else sum(
+                1 for name in all_contracts
+                if _is_system_contract_name(name)
+            )
+        )
+        self.deployed_contracts = visible_contracts
 
-        if not contracts:
+        if not visible_contracts:
             self.selected_contract = ""
             self.available_functions = []
             self.function_name = ""
@@ -392,12 +420,15 @@ class PlaygroundState(rx.State):
             self.function_required_params = {}
             return []
 
-        if self.selected_contract not in contracts:
-            self.selected_contract = contracts[0]
+        if self.selected_contract not in visible_contracts:
+            self.selected_contract = visible_contracts[0]
             self.kwargs_input = DEFAULT_KWARGS_INPUT
 
-        if not self.load_selected_contract or self.load_selected_contract not in contracts:
-            self.load_selected_contract = contracts[0]
+        if (
+            not self.load_selected_contract
+            or self.load_selected_contract not in visible_contracts
+        ):
+            self.load_selected_contract = visible_contracts[0]
 
         return [type(self).refresh_functions, type(self).refresh_loaded_contract]
 
@@ -457,6 +488,16 @@ class PlaygroundState(rx.State):
     def toggle_load_view(self):
         self.load_view_decompiled = not self.load_view_decompiled
 
+    def set_show_system_contracts(self, value):
+        if isinstance(value, dict):
+            value = value.get("value", False)
+        self.show_system_contracts = bool(value)
+        return [type(self).refresh_contracts]
+
+    def toggle_show_system_contracts(self):
+        self.show_system_contracts = not self.show_system_contracts
+        return [type(self).refresh_contracts]
+
     def toggle_panel(self, panel_id: str):
         target = (panel_id or "").strip()
         if not target:
@@ -502,6 +543,7 @@ class PlaygroundState(rx.State):
         env = metadata.environment
 
         self.deployed_contracts = []
+        self.hidden_system_contract_count = 0
         self.selected_contract = ""
         self.available_functions = []
         self.function_name = ""
@@ -584,7 +626,7 @@ class PlaygroundState(rx.State):
             return [rx.toast.error(f"Invalid JSON: {exc}")]
 
         try:
-            session_runtime.apply_state_snapshot(session_id, payload)
+            session_runtime.restore_state_snapshot(session_id, payload)
         except ContractWorkerInvocationError as exc:
             message = self._log_worker_failure("import_state", "Failed to import state: ", exc)
             return [rx.toast.error(message)]

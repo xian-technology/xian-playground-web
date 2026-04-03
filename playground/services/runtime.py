@@ -216,6 +216,10 @@ class SessionRuntimeManager:
         service = self._get_service(session_id)
         service.apply_state_snapshot(snapshot)
 
+    def restore_state_snapshot(self, session_id: str, snapshot: Dict[str, Any]) -> None:
+        service = self._get_service(session_id)
+        service.restore_state_snapshot(snapshot)
+
     def remove_contract(self, session_id: str, name: str) -> None:
         service = self._get_service(session_id)
         service.remove_contract(name)

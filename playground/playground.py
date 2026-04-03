@@ -853,7 +853,37 @@ def load_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
             )
         return style
 
+    contract_visibility_controls = rx.hstack(
+        rx.checkbox(
+            checked=PlaygroundState.show_system_contracts,
+            on_change=PlaygroundState.set_show_system_contracts,
+            color_scheme="cyan",
+        ),
+        rx.text(
+            "Show system contracts",
+            color=COLORS["text_primary"],
+            size="2",
+            cursor="pointer",
+            on_click=PlaygroundState.toggle_show_system_contracts,
+        ),
+        rx.spacer(),
+        rx.cond(
+            PlaygroundState.hidden_system_contract_count > 0,
+            rx.text(
+                "System contracts hidden by default",
+                color=COLORS["text_muted"],
+                size="1",
+            ),
+            rx.fragment(),
+        ),
+        align_items="center",
+        width="100%",
+        flex_wrap="wrap",
+        gap="8px",
+    )
+
     load_panel = panel_stack(
+        contract_visibility_controls,
         styled_select(
             items=PlaygroundState.deployed_contracts,
             value=PlaygroundState.load_selected_contract,
@@ -866,7 +896,11 @@ def load_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
             PlaygroundState.load_selected_contract == "",
             rx.box(
                 rx.text(
-                    "Select a deployed contract to review its source and exports.",
+                    rx.cond(
+                        PlaygroundState.hidden_system_contract_count > 0,
+                        "No user contracts to inspect yet. Turn on 'Show system contracts' to inspect seeded runtime contracts.",
+                        "Select a deployed contract to review its source and exports.",
+                    ),
                     color=COLORS["text_muted"],
                     size="2",
                 ),
@@ -953,6 +987,34 @@ def load_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
 def execution_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
     card_kwargs, is_fullscreen, _ = resolve_panel_context(card_kwargs, EXECUTE_HEIGHT)
 
+    contract_visibility_controls = rx.hstack(
+        rx.checkbox(
+            checked=PlaygroundState.show_system_contracts,
+            on_change=PlaygroundState.set_show_system_contracts,
+            color_scheme="cyan",
+        ),
+        rx.text(
+            "Show system contracts",
+            color=COLORS["text_primary"],
+            size="2",
+            cursor="pointer",
+            on_click=PlaygroundState.toggle_show_system_contracts,
+        ),
+        rx.spacer(),
+        rx.cond(
+            PlaygroundState.hidden_system_contract_count > 0,
+            rx.text(
+                "System contracts hidden by default",
+                color=COLORS["text_muted"],
+                size="1",
+            ),
+            rx.fragment(),
+        ),
+        align_items="center",
+        width="100%",
+        flex_wrap="wrap",
+        gap="8px",
+    )
 
     textarea_kwargs: Dict[str, Any] = {
         "placeholder": 'Kwargs as JSON, e.g. {"to": "alice", "amount": 25}',
@@ -1019,11 +1081,13 @@ def execution_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component
             icon="play",
         ),
         panel_stack(
+            contract_visibility_controls,
             styled_select(
                 items=PlaygroundState.deployed_contracts,
                 value=PlaygroundState.selected_contract,
                 placeholder="Select a contract",
                 on_change=PlaygroundState.change_selected_contract,
+                disabled=PlaygroundState.deployed_contracts == [],
                 width="100%",
             ),
             styled_select(
@@ -1031,7 +1095,26 @@ def execution_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component
                 value=PlaygroundState.function_name,
                 placeholder="Select a function",
                 on_change=PlaygroundState.change_selected_function,
+                disabled=PlaygroundState.available_functions == [],
                 width="100%",
+            ),
+            rx.cond(
+                PlaygroundState.selected_contract == "",
+                rx.box(
+                    rx.text(
+                        rx.cond(
+                            PlaygroundState.hidden_system_contract_count > 0,
+                            "No user contracts available to execute. Turn on 'Show system contracts' to expose seeded runtime contracts.",
+                            "Deploy a contract to execute one of its exported functions.",
+                        ),
+                        color=COLORS["text_muted"],
+                        size="2",
+                    ),
+                    padding="12px",
+                    border=f"1px dashed {COLORS['border']}",
+                    border_radius="8px",
+                ),
+                rx.fragment(),
             ),
             rx.box(
                 styled_text_area(**textarea_kwargs),
@@ -1042,6 +1125,7 @@ def execution_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component
                     "Run Function",
                     on_click=PlaygroundState.run_contract,
                     color_scheme="success",
+                    disabled=PlaygroundState.function_name == "",
                     width="100%",
                 ),
                 width="100%",
