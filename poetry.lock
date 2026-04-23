@@ -235,22 +235,6 @@ files = [
 ]
 
 [[package]]
-name = "autopep8"
-version = "1.5.7"
-description = "A tool that automatically formats Python code to conform to the PEP 8 style guide"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "autopep8-1.5.7-py2.py3-none-any.whl", hash = "sha256:aa213493c30dcdac99537249ee65b24af0b2c29f2e83cd8b3f68760441ed0db9"},
-    {file = "autopep8-1.5.7.tar.gz", hash = "sha256:276ced7e9e3cb22e5d7c14748384a5cf5d9002257c0ed50c0e075b68011bb6d0"},
-]
-
-[package.dependencies]
-pycodestyle = ">=2.7.0"
-toml = "*"
-
-[[package]]
 name = "bidict"
 version = "0.23.1"
 description = "The bidirectional mapping library for Python."
@@ -1403,18 +1387,6 @@ dev = ["abi3audit", "black", "check-manifest", "colorama ; os_name == \"nt\"", "
 test = ["pytest", "pytest-instafail", "pytest-subtests", "pytest-xdist", "pywin32 ; os_name == \"nt\" and platform_python_implementation != \"PyPy\"", "setuptools", "wheel ; os_name == \"nt\" and platform_python_implementation != \"PyPy\"", "wmi ; os_name == \"nt\" and platform_python_implementation != \"PyPy\""]
 
 [[package]]
-name = "pycodestyle"
-version = "2.10.0"
-description = "Python style guide checker"
-optional = false
-python-versions = ">=3.6"
-groups = ["main"]
-files = [
-    {file = "pycodestyle-2.10.0-py2.py3-none-any.whl", hash = "sha256:8a4eaf0d0495c7395bdab3589ac2db602797d76207242c17d470186815706610"},
-    {file = "pycodestyle-2.10.0.tar.gz", hash = "sha256:347187bdb476329d98f695c213d7295a846d1152ff4fe9bacb8a9590b8ee7053"},
-]
-
-[[package]]
 name = "pycparser"
 version = "2.23"
 description = "C parser in Python"
@@ -1984,18 +1956,6 @@ typing-extensions = {version = ">=4.10.0", markers = "python_version < \"3.13\""
 full = ["httpx (>=0.27.0,<0.29.0)", "itsdangerous", "jinja2", "python-multipart (>=0.0.18)", "pyyaml"]
 
 [[package]]
-name = "toml"
-version = "0.10.2"
-description = "Python Library for Tom's Obvious, Minimal Language"
-optional = false
-python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
-groups = ["main"]
-files = [
-    {file = "toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b"},
-    {file = "toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f"},
-]
-
-[[package]]
 name = "typing-extensions"
 version = "4.15.0"
 description = "Backported and Experimental Type Hints for Python 3.9+"
@@ -2296,7 +2256,7 @@ pynacl = ">=1.5.0,<2"
 
 [[package]]
 name = "xian-tech-contracting"
-version = "1.0.1"
+version = "1.0.6"
 description = "Xian Network Python Contracting Engine"
 optional = false
 python-versions = ">=3.12"
@@ -2305,14 +2265,13 @@ files = []
 develop = true
 
 [package.dependencies]
-autopep8 = ">=1.5.7,<2"
 cachetools = ">=5,<8"
 lmdb = ">=1.6,<3"
 pynacl = ">=1.5.0,<2"
-xian-tech-runtime-types = ">=0.1.0,<0.2"
+xian-tech-runtime-types = ">=0.1.1,<0.2"
 
 [package.extras]
-native = ["xian-tech-native-tracer (>=0.1.0,<0.2)"]
+native = ["xian-tech-fastpath-core (>=0.1.0,<0.2)", "xian-tech-native-tracer (>=0.1.0,<0.2)"]
 zk = ["xian-tech-zk (>=0.1.0,<0.2)"]
 
 [package.source]
@@ -2321,7 +2280,7 @@ url = "../xian-contracting"
 
 [[package]]
 name = "xian-tech-linter"
-version = "0.3.1"
+version = "0.3.3"
 description = "Smart contract linter for the Xian blockchain"
 optional = false
 python-versions = ">=3.12"
@@ -2343,7 +2302,7 @@ url = "../xian-linter"
 
 [[package]]
 name = "xian-tech-py"
-version = "0.4.8"
+version = "0.4.14"
 description = "Python SDK for interacting with the Xian blockchain"
 optional = false
 python-versions = ">=3.11"
@@ -2368,15 +2327,17 @@ url = "../xian-py"
 
 [[package]]
 name = "xian-tech-runtime-types"
-version = "0.1.0"
+version = "0.1.1"
 description = "Shared deterministic runtime types for the Xian stack"
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
-files = [
-    {file = "xian_tech_runtime_types-0.1.0-py3-none-any.whl", hash = "sha256:4273d7be355e4f7afcac2ecf930da91b9c578c4b17cdc3753efad3ce6d81c484"},
-    {file = "xian_tech_runtime_types-0.1.0.tar.gz", hash = "sha256:746f24f0ca2f298790e203b117e7df84b7b51118e26b101c47a694011e64338c"},
-]
+files = []
+develop = true
+
+[package.source]
+type = "directory"
+url = "../xian-contracting/packages/xian-runtime-types"
 
 [[package]]
 name = "yarl"
@@ -2526,4 +2487,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "c800096ba10e921b24a0aa14d62a7f0185b23330e361f6ebd1f1e5b6f536b9bd"
+content-hash = "b386e4251ebafcf19f2eee430311186c00674d4dda09209db6de6e3239409c28"
