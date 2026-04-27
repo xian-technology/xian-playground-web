@@ -10,6 +10,19 @@ Python and the frontend is generated and served by Reflex itself. State
 (contract storage, metadata, UI snapshots) is filesystem-backed under
 `playground/.sessions/`.
 
+## Session Flow
+
+```mermaid
+flowchart LR
+  Browser["Browser session"] --> Reflex["Reflex frontend and backend"]
+  Reflex --> Session["Per-session sandbox"]
+  Session --> Contracting["xian-contracting runtime"]
+  Session --> Storage["Filesystem-backed state"]
+  Reflex --> Linter["xian-linter"]
+  Contracting --> Results["Deploy and call results"]
+  Results --> Browser
+```
+
 ## Quick Start
 
 Install dependencies (sibling Xian repos must be present alongside this
