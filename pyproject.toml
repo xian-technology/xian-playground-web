@@ -6,7 +6,7 @@ authors = [
     {name = "Endogen",email = "Endogen@users.noreply.github.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "reflex (>=0.9.0,<0.10.0)",
     "xian-tech-contracting (>=1.0.1,<2.0.0)",

@@ -23,7 +23,7 @@ import reflex as rx
 
 config = rx.Config(
     app_name="playground",
-    disable_plugins=["reflex.plugins.sitemap.SitemapPlugin"],
+    disable_plugins=[rx.plugins.SitemapPlugin()],
 )
 ```
 
@@ -216,7 +216,7 @@ After=network.target
 Type=simple
 User=endogen
 WorkingDirectory=/home/endogen/xian-playground
-Environment="PATH=/home/endogen/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/endogen/.cache/pypoetry/virtualenvs/xian-playground--o3SVNIl-py3.11/bin"
+Environment="PATH=/home/endogen/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/endogen/.cache/pypoetry/virtualenvs/xian-playground--o3SVNIl-py3.14/bin"
 ExecStart=/home/endogen/.local/bin/poetry run reflex run --env prod --single-port --frontend-port 8001 --backend-port 8001
 Restart=on-failure
 RestartSec=5
