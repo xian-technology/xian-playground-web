@@ -29,7 +29,7 @@ Install dependencies (sibling Xian repos must be present alongside this
 checkout):
 
 ```bash
-poetry install
+uv sync
 ```
 
 The project resolves its Xian dependencies as editable sibling checkouts:
@@ -41,7 +41,7 @@ The project resolves its Xian dependencies as editable sibling checkouts:
 ### Local development
 
 ```bash
-poetry run reflex run
+uv run reflex run
 ```
 
 Vite dev server with hot reload + a single backend worker. Reflex prints
@@ -50,7 +50,7 @@ the URL it binds to (typically `http://localhost:3000`).
 ### Production (single-port — recommended)
 
 ```bash
-poetry run reflex run --env prod --single-port \
+uv run reflex run --env prod --single-port \
   --frontend-port 8001 --backend-port 8001
 ```
 
@@ -60,7 +60,7 @@ events on port 8001.
 ### Production (split-port)
 
 ```bash
-poetry run reflex run --env prod
+uv run reflex run --env prod
 ```
 
 Frontend Sirv server on port 3000, backend on 8000. Front it with the
@@ -79,7 +79,7 @@ split-port nginx config below.
   lowercase ASCII / digits / underscores, and ≤ 64 characters. The only
   exception is the system-contract path when the sandbox signer is
   explicitly `sys`.
-- **Python 3.12 only (currently).** `pyproject.toml`,
+- **Python 3.14.** `pyproject.toml`,
   `xian-tech-contracting`, and `xian-tech-linter` pin the runtime.
 - **Resource caps are configurable.** Upload sizes, activity-log size,
   session TTL, and worker RPC timeouts are tunable through environment
@@ -113,7 +113,7 @@ for local dev; ports and env are overridden via CLI in production.
 - `tests/unit/` — fast unit suite.
 - `assets/` — static assets served by Reflex.
 - `uploaded_files/` — runtime upload area.
-- `pyproject.toml`, `poetry.lock` — Poetry dependency configuration.
+- `pyproject.toml`, `uv.lock` — uv dependency configuration.
 - `rxconfig.py` — Reflex runtime configuration.
 
 ## Reverse Proxy / Deployment Notes
@@ -137,10 +137,10 @@ README revisions when deploying.
 ## Validation
 
 ```bash
-poetry install
-poetry run pytest tests/unit                                # fast unit tests
-poetry run pytest tests/integration -k <pattern>            # integration paths
-poetry run reflex run --env prod --frontend-only            # frontend-build smoke
+uv sync
+uv run pytest tests/unit                                # fast unit tests
+uv run pytest tests/integration -k <pattern>            # integration paths
+uv run reflex run --env prod --frontend-only            # frontend-build smoke
 ```
 
 ## Troubleshooting
@@ -148,15 +148,15 @@ poetry run reflex run --env prod --frontend-only            # frontend-build smo
 - Missing env vars: `rxconfig.py` raises `RuntimeError` naming the
   missing key. Double-check `.env`.
 - Frontend build errors: verify Node ≥ 18 or Bun ≥ 1.1 is on `PATH`,
-  then run `poetry run reflex run --env prod --frontend-only` to see
+  then run `uv run reflex run --env prod --frontend-only` to see
   raw logs in `.web/`.
 - Session cookie not set: confirm `PLAYGROUND_SESSION_COOKIE_SECURE=1`
   when serving over HTTPS.
 
 ## Requirements
 
-- Python 3.12
-- Poetry
+- Python 3.14
+- uv
 - Node.js ≥ 18 or Bun ≥ 1.1 (Reflex builds the frontend)
 - A compiler toolchain for transitive native dependencies (`make`,
   `gcc`, `pkg-config`)
