@@ -48,17 +48,17 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Install Poetry
-        run: python -m pip install poetry
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Install dependencies
         working-directory: xian-playground-web
-        run: poetry install --with dev
+        run: uv sync --group dev
 
       - name: Run tests
         working-directory: xian-playground-web
-        run: poetry run pytest -q
+        run: uv run pytest -q
 
       - name: Export Reflex app
         working-directory: xian-playground-web
-        run: poetry run reflex export --frontend-only
+        run: uv run reflex export --frontend-only

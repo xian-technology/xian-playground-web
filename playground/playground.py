@@ -1779,7 +1779,6 @@ def _frontend_redirect_target(request: Request) -> str:
     return "/"
 
 
-@app._api.route("/sessions/new", methods=["GET"])
 async def create_session_route(request: Request):
     metadata = session_runtime.create_session()
     response = RedirectResponse(_frontend_redirect_target(request))
@@ -1787,7 +1786,6 @@ async def create_session_route(request: Request):
     return response
 
 
-@app._api.route("/sessions/{session_id}", methods=["GET"])
 async def resume_session_route(request: Request):
     raw = request.path_params.get("session_id", "").lower()
     if not SessionRepository.is_valid_session_id(raw):
@@ -1798,3 +1796,7 @@ async def resume_session_route(request: Request):
     response = RedirectResponse(_frontend_redirect_target(request))
     issue_session_cookie(response, metadata.session_id, request=request)
     return response
+
+
+app._api.add_route("/sessions/new", create_session_route, methods=["GET"])
+app._api.add_route("/sessions/{session_id}", resume_session_route, methods=["GET"])
