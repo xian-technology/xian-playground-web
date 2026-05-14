@@ -42,8 +42,8 @@ class BootstrapLoadingStateTest(unittest.TestCase):
         state.kwargs_input = '{"stale": true}'
         state.available_functions = []
         state.function_name = ""
-        state.loaded_contract_code = ""
-        state.loaded_contract_decompiled = ""
+        state.loaded_contract_source = ""
+        state.loaded_contract_runtime_source = ""
         state.function_required_params = {}
 
         with (

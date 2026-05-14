@@ -78,7 +78,7 @@ class ContractNameValidationTest(unittest.TestCase):
 
             self.assertIn("demo_token", service.list_contracts())
 
-    def test_contract_details_return_source_and_runtime_code(self) -> None:
+    def test_contract_details_return_source_and_local_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = ContractingService(storage_home=Path(tmpdir))
             service.deploy("con_demo_token", SIMPLE_CONTRACT)
@@ -86,10 +86,10 @@ class ContractNameValidationTest(unittest.TestCase):
             details = service.get_contract_details("con_demo_token")
 
             self.assertEqual(details.source.strip(), SIMPLE_CONTRACT.strip())
-            self.assertIn("@__export('con_demo_token')", details.decompiled_source)
+            self.assertIn("@__export('con_demo_token')", details.local_runtime_source)
             self.assertNotEqual(
                 details.source.strip(),
-                details.decompiled_source.strip(),
+                details.local_runtime_source.strip(),
             )
 
     def test_apply_state_snapshot_rejects_internal_contract_injection(self) -> None:
@@ -100,7 +100,7 @@ class ContractNameValidationTest(unittest.TestCase):
                 service.apply_state_snapshot(
                     {
                         "bad-name": {
-                            "__code__": "@__export('bad')\ndef ping():\n    return 7\n",
+                            "__xian_ir_v1__": "{}",
                             "__source__": "@export\ndef ping():\n    return 7\n",
                         }
                     }

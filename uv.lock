@@ -1074,7 +1074,6 @@ requires-dist = [
     { name = "lmdb", specifier = ">=2.2.0,<3" },
     { name = "pynacl", specifier = ">=1.5.0,<2" },
     { name = "xian-tech-fastpath-core", marker = "extra == 'native'", editable = "../xian-contracting/packages/xian-fastpath-core" },
-    { name = "xian-tech-native-tracer", marker = "extra == 'native'", editable = "../xian-contracting/packages/xian-native-tracer" },
     { name = "xian-tech-runtime-types", editable = "../xian-contracting/packages/xian-runtime-types" },
     { name = "xian-tech-zk", marker = "extra == 'zk'", editable = "../xian-contracting/packages/xian-zk" },
 ]
@@ -1123,6 +1122,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "pynacl" },
     { name = "xian-tech-accounts" },
+    { name = "xian-tech-contracting" },
     { name = "xian-tech-runtime-types" },
 ]
 
@@ -1136,6 +1136,7 @@ requires-dist = [
     { name = "pynacl", specifier = ">=1.5.0,<2" },
     { name = "uvicorn", marker = "extra == 'app'", specifier = ">=0.46.0,<0.47" },
     { name = "xian-tech-accounts", editable = "../xian-contracting/packages/xian-accounts" },
+    { name = "xian-tech-contracting", editable = "../xian-contracting" },
     { name = "xian-tech-runtime-types", editable = "../xian-contracting/packages/xian-runtime-types" },
 ]
 provides-extras = ["hd", "eth", "app"]

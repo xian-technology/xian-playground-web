@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from contracting import constants
-from contracting.client import ContractingClient
+from contracting.local import ContractingClient
 from contracting.names import is_safe_contract_name
 from contracting.storage.driver import Driver
 from xian_runtime_types.decimal import ContractingDecimal
@@ -153,7 +153,7 @@ class ContractExportInfo:
 class ContractDetails:
     name: str
     source: str
-    decompiled_source: str
+    local_runtime_source: str
     exports: List[ContractExportInfo]
 
 
@@ -422,7 +422,7 @@ class ContractingService:
                         f"State for '{contract}' must be an object mapping "
                         "keys to values."
                     )
-                if self._driver.get_contract(contract) is None:
+                if not self._driver.has_contract(contract):
                     raise ValueError(
                         f"Contract '{contract}' is not deployed. Deploy it "
                         "before editing state."
@@ -510,9 +510,7 @@ class ContractingService:
             return []
 
         with self._lock:
-            source = self._driver.get_contract_source(
-                contract
-            ) or self._driver.get_contract(contract)
+            source = self._driver.get_contract_source(contract)
 
         if not source:
             return []
@@ -525,9 +523,7 @@ class ContractingService:
             return []
 
         with self._lock:
-            source = self._driver.get_contract_source(
-                contract
-            ) or self._driver.get_contract(contract)
+            source = self._driver.get_contract_source(contract)
 
         if not source:
             return []
@@ -541,21 +537,21 @@ class ContractingService:
 
         with self._lock:
             source = self._driver.get_contract_source(clean_name)
-            runtime_code = self._driver.get_contract(clean_name)
+            local_runtime = self._driver.get_local_contract_runtime(clean_name)
 
-        if source is None and runtime_code is None:
+        if source is None and local_runtime is None:
             raise ValueError(f"Contract '{clean_name}' is not deployed.")
 
-        display_source = source or runtime_code or ""
+        display_source = source or local_runtime or ""
         exports = self._parse_exports(display_source)
-        decompiled = self._safe_decompile(
-            runtime_code,
+        local_runtime_source = self._local_runtime_display_source(
+            local_runtime,
             fallback=display_source,
         )
         return ContractDetails(
             name=clean_name,
             source=display_source,
-            decompiled_source=decompiled,
+            local_runtime_source=local_runtime_source,
             exports=exports,
         )
 
@@ -566,7 +562,7 @@ class ContractingService:
             raise ValueError("No function selected.")
 
         with self._lock:
-            abstract = self._client.get_contract(contract)
+            abstract = self._client.get_contract_proxy(contract)
             if abstract is None:
                 raise ValueError(f"Contract '{contract}' is not deployed.")
             if not hasattr(abstract, function):
@@ -614,7 +610,7 @@ class ContractingService:
             raise ValueError("The submission contract cannot be removed.")
 
         with self._lock:
-            if self._driver.get_contract(clean_name) is None:
+            if not self._driver.has_contract(clean_name):
                 raise ValueError(f"Contract '{clean_name}' is not deployed.")
             self._driver.delete_contract(clean_name)
             self._driver.flush_file(clean_name)
@@ -682,8 +678,12 @@ class ContractingService:
         return exports
 
     @staticmethod
-    def _safe_decompile(runtime_code: str | None, *, fallback: str = "") -> str:
-        """Return compiled runtime code when available, otherwise fallback text."""
-        if runtime_code and runtime_code.strip():
-            return runtime_code
+    def _local_runtime_display_source(
+        local_runtime: str | None,
+        *,
+        fallback: str = "",
+    ) -> str:
+        """Return transient local harness source when available, otherwise source."""
+        if local_runtime and local_runtime.strip():
+            return local_runtime
         return fallback

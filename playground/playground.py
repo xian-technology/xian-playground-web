@@ -912,16 +912,16 @@ def load_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
                 rx.hstack(
                     rx.text(
                         rx.cond(
-                            PlaygroundState.load_view_decompiled,
-                            "Decompiled",
-                            "Raw",
+                            PlaygroundState.load_view_local_runtime,
+                            "Local runtime",
+                            "Source",
                         ),
                         color=COLORS["text_secondary"],
                         size="2",
                     ),
                     rx.spacer(),
                     rx.switch(
-                        checked=PlaygroundState.load_view_decompiled,
+                        checked=PlaygroundState.load_view_local_runtime,
                         on_change=lambda value: PlaygroundState.toggle_load_view(),
                         color_scheme="cyan",
                     ),
@@ -932,17 +932,17 @@ def load_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
                 ),
                 rx.box(
                     rx.cond(
-                        PlaygroundState.load_view_decompiled,
+                        PlaygroundState.load_view_local_runtime,
                         code_viewer(
-                            PlaygroundState.loaded_contract_decompiled,
+                            PlaygroundState.loaded_contract_runtime_source,
                             "python",
-                            "# Decompiled source unavailable.",
+                            "# Local runtime source unavailable.",
                             font_size="12px",
                             boxed=False,
                             style=_code_viewer_style(is_fullscreen),
                         ),
                         code_viewer(
-                            PlaygroundState.loaded_contract_code,
+                            PlaygroundState.loaded_contract_source,
                             "python",
                             "# Source unavailable.",
                             font_size="12px",

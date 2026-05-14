@@ -112,10 +112,10 @@ class PlaygroundState(rx.State):
     function_name: str = ""
 
     load_selected_contract: str = ""
-    loaded_contract_code: str = ""
-    loaded_contract_decompiled: str = ""
+    loaded_contract_source: str = ""
+    loaded_contract_runtime_source: str = ""
     function_required_params: dict[str, List[str]] = {}
-    load_view_decompiled: bool = True
+    load_view_local_runtime: bool = False
     expanded_panel: str = ""
 
     kwargs_input: str = DEFAULT_KWARGS_INPUT
@@ -440,8 +440,8 @@ class PlaygroundState(rx.State):
                 self.available_functions = []
                 self.function_name = ""
                 self.load_selected_contract = ""
-                self.loaded_contract_code = ""
-                self.loaded_contract_decompiled = ""
+                self.loaded_contract_source = ""
+                self.loaded_contract_runtime_source = ""
                 self.function_required_params = {}
                 return []
 
@@ -506,25 +506,25 @@ class PlaygroundState(rx.State):
             return []
         try:
             if not self.load_selected_contract:
-                self.loaded_contract_code = ""
-                self.loaded_contract_decompiled = ""
+                self.loaded_contract_source = ""
+                self.loaded_contract_runtime_source = ""
                 return []
 
             try:
                 details: ContractDetails = session_runtime.get_contract_details(session_id, self.load_selected_contract)
             except Exception as exc:
-                self.loaded_contract_code = ""
-                self.loaded_contract_decompiled = ""
+                self.loaded_contract_source = ""
+                self.loaded_contract_runtime_source = ""
                 return [rx.toast.error(f"Failed to load contract '{self.load_selected_contract}': {exc}")]
 
-            self.loaded_contract_code = details.source
-            self.loaded_contract_decompiled = details.decompiled_source
+            self.loaded_contract_source = details.source
+            self.loaded_contract_runtime_source = details.local_runtime_source
             return []
         finally:
             self._finish_bootstrap_step()
 
     def toggle_load_view(self):
-        self.load_view_decompiled = not self.load_view_decompiled
+        self.load_view_local_runtime = not self.load_view_local_runtime
 
     def set_show_system_contracts(self, value):
         if isinstance(value, dict):
@@ -587,9 +587,9 @@ class PlaygroundState(rx.State):
         self.function_name = ""
         self.function_required_params = {}
         self.load_selected_contract = ""
-        self.loaded_contract_code = ""
-        self.loaded_contract_decompiled = ""
-        self.load_view_decompiled = True
+        self.loaded_contract_source = ""
+        self.loaded_contract_runtime_source = ""
+        self.load_view_local_runtime = False
         self.expanded_panel = ""
         self.kwargs_input = DEFAULT_KWARGS_INPUT
         self.run_result = ""
@@ -714,8 +714,8 @@ class PlaygroundState(rx.State):
 
         if self.load_selected_contract == target:
             self.load_selected_contract = ""
-            self.loaded_contract_code = ""
-            self.loaded_contract_decompiled = ""
+            self.loaded_contract_source = ""
+            self.loaded_contract_runtime_source = ""
         if self.expanded_panel == target:
             self.expanded_panel = ""
 

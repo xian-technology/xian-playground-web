@@ -2,8 +2,9 @@
 
 `xian-playground-web` is the interactive in-browser playground for the
 Xian contracting engine. Users author, lint, deploy, and call smart
-contracts in the browser while the backend runs a full
-`xian-contracting` runtime in a per-session sandbox.
+contracts in the browser while the backend runs the `xian-contracting`
+local harness in a per-session sandbox. It is a developer test surface,
+not a live node.
 
 The app is built with [Reflex](https://reflex.dev/), so the backend is
 Python and the frontend is generated and served by Reflex itself. State
@@ -16,7 +17,7 @@ Python and the frontend is generated and served by Reflex itself. State
 flowchart LR
   Browser["Browser session"] --> Reflex["Reflex frontend and backend"]
   Reflex --> Session["Per-session sandbox"]
-  Session --> Contracting["xian-contracting runtime"]
+  Session --> Contracting["xian-contracting local harness"]
   Session --> Storage["Filesystem-backed state"]
   Reflex --> Linter["xian-linter"]
   Contracting --> Results["Deploy and call results"]
@@ -68,9 +69,9 @@ split-port nginx config below.
 
 ## Principles
 
-- **Per-session contracting runtime.** The backend runs a real
-  `xian-contracting` runtime per browser session, with isolated state on
-  disk. There is no shared chain.
+- **Per-session local harness.** The backend runs a real `xian-contracting`
+  local harness per browser session, with isolated state on disk. There is no
+  shared chain.
 - **Single-process session manager.** Session metadata locks live in
   memory. Do not set `REFLEX_REDIS_URL` — multiple Reflex workers would
   corrupt the per-session filesystem state.
