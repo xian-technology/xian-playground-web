@@ -1048,7 +1048,7 @@ dev = [{ name = "pytest", specifier = ">=9.0.3,<10" }]
 
 [[package]]
 name = "xian-tech-accounts"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "../xian-contracting/packages/xian-accounts" }
 dependencies = [
     { name = "pynacl" },
@@ -1058,13 +1058,19 @@ dependencies = [
 requires-dist = [{ name = "pynacl", specifier = ">=1.5.0,<2" }]
 
 [[package]]
+name = "xian-tech-compiler-core"
+version = "0.1.1"
+source = { directory = "../xian-contracting/packages/xian-compiler-core" }
+
+[[package]]
 name = "xian-tech-contracting"
-version = "1.0.6"
+version = "1.0.8"
 source = { editable = "../xian-contracting" }
 dependencies = [
     { name = "cachetools" },
     { name = "lmdb" },
     { name = "pynacl" },
+    { name = "xian-tech-compiler-core" },
     { name = "xian-tech-runtime-types" },
 ]
 
@@ -1073,6 +1079,7 @@ requires-dist = [
     { name = "cachetools", specifier = ">=7.0.6,<8" },
     { name = "lmdb", specifier = ">=2.2.0,<3" },
     { name = "pynacl", specifier = ">=1.5.0,<2" },
+    { name = "xian-tech-compiler-core", directory = "../xian-contracting/packages/xian-compiler-core" },
     { name = "xian-tech-fastpath-core", marker = "extra == 'native'", editable = "../xian-contracting/packages/xian-fastpath-core" },
     { name = "xian-tech-runtime-types", editable = "../xian-contracting/packages/xian-runtime-types" },
     { name = "xian-tech-zk", marker = "extra == 'zk'", editable = "../xian-contracting/packages/xian-zk" },
@@ -1089,7 +1096,7 @@ dev = [
 
 [[package]]
 name = "xian-tech-linter"
-version = "0.3.3"
+version = "0.3.5"
 source = { editable = "../xian-linter" }
 dependencies = [
     { name = "pydantic" },
@@ -1116,7 +1123,7 @@ dev = [
 
 [[package]]
 name = "xian-tech-py"
-version = "0.4.15"
+version = "0.4.18"
 source = { editable = "../xian-py" }
 dependencies = [
     { name = "aiohttp" },
@@ -1150,7 +1157,7 @@ dev = [
 
 [[package]]
 name = "xian-tech-runtime-types"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "../xian-contracting/packages/xian-runtime-types" }
 
 [[package]]
