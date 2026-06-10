@@ -162,7 +162,7 @@ uv run reflex run --env prod --frontend-only            # frontend-build smoke
 - A compiler toolchain for transitive native dependencies (`make`,
   `gcc`, `pkg-config`)
 
-## Related Repos
+## Related Docs
 
 - [`../xian-contracting/README.md`](../xian-contracting/README.md) — contracting runtime used per session
 - [`../xian-linter/README.md`](../xian-linter/README.md) — contract linter
