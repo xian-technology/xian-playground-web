@@ -8,7 +8,6 @@ __pycache__/
 .claude
 .env
 docs/
-AGENTS.md
 CLAUDE.md
 PROGRESS.md
 no-gambiarra-policy.txt
