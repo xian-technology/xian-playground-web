@@ -12,12 +12,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict
 
 from .contracting import ContractDetails, ContractExportInfo
-from .sessions import SessionMetadata, SessionNotFoundError, SessionRepository
+from .sessions import DEFAULT_UI_STATE, SessionMetadata, SessionNotFoundError, SessionRepository
 from .worker import ContractingWorker, SessionServiceProxy
 
 
 SESSION_COOKIE_NAME = "xian_session_id"
 SESSION_COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
+SESSION_COOKIE_SEPARATOR = "."
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,22 @@ DEFAULT_WORKER_DRAIN_TIMEOUT = _env_float("PLAYGROUND_SESSION_WORKER_STOP_TIMEOU
 DEFAULT_SESSION_TTL_SECONDS = _env_float("PLAYGROUND_SESSION_TTL_SECONDS", 7 * 24 * 60 * 60.0)
 
 WorkerFactory = Callable[[Path], ContractingWorker]
+
+
+def pack_session_cookie(metadata: SessionMetadata) -> str:
+    return f"{metadata.session_id}{SESSION_COOKIE_SEPARATOR}{metadata.owner_secret}"
+
+
+def parse_session_cookie(value: str | None) -> tuple[str, str] | None:
+    if not value:
+        return None
+    session_id, separator, owner_secret = value.strip().partition(SESSION_COOKIE_SEPARATOR)
+    if not separator or not owner_secret:
+        return None
+    session_id = session_id.lower()
+    if not SessionRepository.is_valid_session_id(session_id):
+        return None
+    return session_id, owner_secret
 
 
 @dataclass
@@ -145,26 +162,34 @@ class SessionRuntimeManager:
 
     def resolve_or_create(
         self,
-        session_id: str | None,
+        session_cookie: str | None,
         *,
         create_if_missing: bool = True,
     ) -> tuple[SessionMetadata, bool]:
-        """Return existing metadata for session_id or create a new session."""
-        if session_id and SessionRepository.is_valid_session_id(session_id):
+        """Return metadata for a browser-bound cookie or create a new session."""
+        parsed_cookie = parse_session_cookie(session_cookie)
+        if parsed_cookie:
+            session_id, owner_secret = parsed_cookie
             try:
-                metadata = self._repository.load_metadata(session_id)
+                metadata = self._repository.verify_owner_secret(session_id, owner_secret)
                 return metadata, False
             except SessionNotFoundError:
                 pass
 
         if not create_if_missing:
-            raise SessionNotFoundError(session_id or "missing-session-id")
+            raise SessionNotFoundError(session_cookie or "missing-session-cookie")
 
         metadata = self._repository.create_session()
         return metadata, True
 
     def create_session(self) -> SessionMetadata:
         return self._repository.create_session()
+
+    def create_resume_token(self, session_id: str) -> str:
+        return self._repository.create_resume_token(session_id)
+
+    def consume_resume_token(self, token: str | None) -> SessionMetadata:
+        return self._repository.consume_resume_token(token)
 
     def ensure_exists(self, session_id: str) -> SessionMetadata:
         return self._repository.load_metadata(session_id)
@@ -227,15 +252,11 @@ class SessionRuntimeManager:
     def reset_state(self, session_id: str) -> SessionMetadata:
         service = self._get_service(session_id)
         service.reset_state()
-        metadata = SessionMetadata.new(session_id)
-        metadata.environment = service.snapshot_environment()
-        metadata.updated_at = metadata.created_at
-        self._repository.update_metadata(
+        return self._repository.update_metadata(
             session_id,
-            environment=metadata.environment,
-            ui_state=metadata.ui_state,
+            environment=service.snapshot_environment(),
+            ui_state=dict(DEFAULT_UI_STATE),
         )
-        return metadata
 
     def set_environment_var(self, session_id: str, key: str, value: Any) -> Any:
         service = self._get_service(session_id)

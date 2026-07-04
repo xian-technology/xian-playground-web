@@ -4,7 +4,7 @@
 
 This package is the Reflex application behind the contract playground: the
 in-browser editor UI, per-session sandboxes, and the services that run the
-`xian-contracting` local harness.
+`xian_vm_v1` execution path.
 
 ## Contents
 
@@ -14,8 +14,8 @@ in-browser editor UI, per-session sandboxes, and the services that run the
 - `services/` — the session and runtime layer:
   - `sessions.py` — per-session sandbox lifecycle and filesystem-backed
     state under `.sessions/`.
-  - `contracting.py`, `runtime.py`, `worker.py` — local-harness execution
-    of deploy and call requests.
+  - `contracting.py`, `runtime.py`, `worker.py` — source compilation and
+    native Xian VM execution of deploy and call requests.
   - `linting.py` — `xian-linter` integration.
   - `environment.py` — sandbox environment shaping.
 - `defaults.py`, `middleware.py` — starter contract content and request
@@ -25,8 +25,9 @@ in-browser editor UI, per-session sandboxes, and the services that run the
 
 - `.sessions/` is runtime state, not source; it is safe to delete locally and
   must never be committed.
-- Sessions execute user-supplied contract code; changes to the sandbox or
-  worker isolation in `services/` are security-sensitive.
+- Sessions execute user-supplied contract source through the VM-core package;
+  changes to the sandbox, worker isolation, or VM context in `services/` are
+  security-sensitive.
 
 ## Next
 

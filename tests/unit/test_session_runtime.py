@@ -10,6 +10,7 @@ from playground.services.runtime import (
     SessionNotFoundError,
     SessionRepository,
     SessionRuntimeManager,
+    pack_session_cookie,
 )
 
 
@@ -118,6 +119,48 @@ class SessionRuntimeWorkerLifecycleTest(unittest.TestCase):
         with self.assertRaises(SessionNotFoundError):
             manager.resolve_or_create(None, create_if_missing=False)
         self.assertEqual(self.repo.list_sessions(), [])
+
+    def test_session_cookie_must_include_matching_owner_secret(self) -> None:
+        manager = self._manager(max_idle_seconds=0, reap_interval_seconds=0)
+        session = manager.create_session()
+
+        metadata, created = manager.resolve_or_create(
+            pack_session_cookie(session),
+            create_if_missing=False,
+        )
+        self.assertFalse(created)
+        self.assertEqual(metadata.session_id, session.session_id)
+
+        with self.assertRaises(SessionNotFoundError):
+            manager.resolve_or_create(session.session_id, create_if_missing=False)
+        with self.assertRaises(SessionNotFoundError):
+            manager.resolve_or_create(
+                f"{session.session_id}.wrong-secret",
+                create_if_missing=False,
+            )
+
+    def test_resume_token_is_single_use_and_rotates_owner_secret(self) -> None:
+        manager = self._manager(max_idle_seconds=0, reap_interval_seconds=0)
+        session = manager.create_session()
+        old_cookie = pack_session_cookie(session)
+
+        token = manager.create_resume_token(session.session_id)
+        adopted = manager.consume_resume_token(token)
+
+        self.assertEqual(adopted.session_id, session.session_id)
+        self.assertNotEqual(adopted.owner_secret, session.owner_secret)
+        self.assertIsNone(adopted.resume_token_hash)
+        with self.assertRaises(SessionNotFoundError):
+            manager.consume_resume_token(token)
+        with self.assertRaises(SessionNotFoundError):
+            manager.resolve_or_create(old_cookie, create_if_missing=False)
+
+        metadata, created = manager.resolve_or_create(
+            pack_session_cookie(adopted),
+            create_if_missing=False,
+        )
+        self.assertFalse(created)
+        self.assertEqual(metadata.session_id, session.session_id)
 
 
 if __name__ == "__main__":

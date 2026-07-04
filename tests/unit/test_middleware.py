@@ -13,6 +13,7 @@ from playground.middleware import (
     _infer_secure_cookie,
     issue_session_cookie,
 )
+from playground.services.sessions import SessionMetadata
 
 
 def _make_request(*, scheme: str = "http", headers: dict[str, str] | None = None) -> Request:
@@ -69,16 +70,19 @@ class MiddlewareSecurityTest(unittest.TestCase):
     def test_issue_cookie_marks_secure_when_https(self) -> None:
         request = _make_request(scheme="https")
         response = Response()
+        metadata = SessionMetadata.new("abc")
         with _env("PLAYGROUND_SESSION_COOKIE_SECURE", None):
-            issue_session_cookie(response, "abc", request=request)
+            issue_session_cookie(response, metadata, request=request)
         header = response.headers["set-cookie"]
         self.assertIn("Secure", header)
+        self.assertIn(f"xian_session_id={metadata.session_id}.", header)
 
     def test_issue_cookie_omits_secure_when_overridden_false(self) -> None:
         request = _make_request(scheme="https")
         response = Response()
+        metadata = SessionMetadata.new("abc")
         with _env("PLAYGROUND_SESSION_COOKIE_SECURE", "0"):
-            issue_session_cookie(response, "abc", request=request)
+            issue_session_cookie(response, metadata, request=request)
         header = response.headers["set-cookie"]
         self.assertNotIn("Secure", header)
 

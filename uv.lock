@@ -1,6 +1,6 @@
 version = 1
 revision = 1
-requires-python = ">=3.14,<3.15"
+requires-python = "==3.14.*"
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -1027,6 +1027,7 @@ dependencies = [
     { name = "xian-tech-linter" },
     { name = "xian-tech-py" },
     { name = "xian-tech-runtime-types" },
+    { name = "xian-tech-vm-core" },
 ]
 
 [package.dev-dependencies]
@@ -1041,6 +1042,7 @@ requires-dist = [
     { name = "xian-tech-linter", editable = "../xian-linter" },
     { name = "xian-tech-py", editable = "../xian-py" },
     { name = "xian-tech-runtime-types", editable = "../xian-contracting/packages/xian-runtime-types" },
+    { name = "xian-tech-vm-core", editable = "../xian-contracting/packages/xian-vm-core" },
 ]
 
 [package.metadata.requires-dev]
@@ -1048,7 +1050,7 @@ dev = [{ name = "pytest", specifier = ">=9.0.3,<10" }]
 
 [[package]]
 name = "xian-tech-accounts"
-version = "0.1.1"
+version = "0.1.3b1"
 source = { editable = "../xian-contracting/packages/xian-accounts" }
 dependencies = [
     { name = "pynacl" },
@@ -1059,12 +1061,12 @@ requires-dist = [{ name = "pynacl", specifier = ">=1.5.0,<2" }]
 
 [[package]]
 name = "xian-tech-compiler-core"
-version = "0.1.1"
+version = "0.1.4b1"
 source = { directory = "../xian-contracting/packages/xian-compiler-core" }
 
 [[package]]
 name = "xian-tech-contracting"
-version = "1.0.8"
+version = "1.0.11b1"
 source = { editable = "../xian-contracting" }
 dependencies = [
     { name = "cachetools" },
@@ -1096,7 +1098,7 @@ dev = [
 
 [[package]]
 name = "xian-tech-linter"
-version = "0.3.5"
+version = "0.3.7b1"
 source = { editable = "../xian-linter" }
 dependencies = [
     { name = "pydantic" },
@@ -1123,13 +1125,12 @@ dev = [
 
 [[package]]
 name = "xian-tech-py"
-version = "0.4.18"
+version = "0.4.20b1"
 source = { editable = "../xian-py" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pynacl" },
     { name = "xian-tech-accounts" },
-    { name = "xian-tech-contracting" },
     { name = "xian-tech-runtime-types" },
 ]
 
@@ -1143,10 +1144,10 @@ requires-dist = [
     { name = "pynacl", specifier = ">=1.5.0,<2" },
     { name = "uvicorn", marker = "extra == 'app'", specifier = ">=0.46.0,<0.47" },
     { name = "xian-tech-accounts", editable = "../xian-contracting/packages/xian-accounts" },
-    { name = "xian-tech-contracting", editable = "../xian-contracting" },
+    { name = "xian-tech-contracting", marker = "extra == 'compile'", editable = "../xian-contracting" },
     { name = "xian-tech-runtime-types", editable = "../xian-contracting/packages/xian-runtime-types" },
 ]
-provides-extras = ["hd", "eth", "app"]
+provides-extras = ["compile", "hd", "eth", "app"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1157,8 +1158,19 @@ dev = [
 
 [[package]]
 name = "xian-tech-runtime-types"
-version = "0.1.2"
+version = "0.1.4b1"
 source = { editable = "../xian-contracting/packages/xian-runtime-types" }
+
+[[package]]
+name = "xian-tech-vm-core"
+version = "0.1.0"
+source = { editable = "../xian-contracting/packages/xian-vm-core" }
+dependencies = [
+    { name = "xian-tech-contracting" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "xian-tech-contracting", editable = "../xian-contracting" }]
 
 [[package]]
 name = "yarl"

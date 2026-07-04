@@ -11,11 +11,14 @@ from playground.state import PlaygroundState
 class BootstrapLoadingStateTest(unittest.TestCase):
     def test_on_load_starts_bootstrap_tracking(self) -> None:
         state = PlaygroundState(_reflex_internal_init=True)
-        metadata = SimpleNamespace(ui_state={})
+        metadata = SimpleNamespace(session_id="session-1", ui_state={})
 
         with (
-            patch.object(PlaygroundState, "_cookie_session_id", return_value="session-1"),
-            patch("playground.state.session_runtime.ensure_exists", return_value=metadata),
+            patch.object(PlaygroundState, "_cookie_session_id", return_value="session-cookie"),
+            patch(
+                "playground.state.session_runtime.resolve_or_create",
+                return_value=(metadata, False),
+            ),
             patch("playground.state.session_runtime.get_environment_snapshot", return_value={}),
         ):
             actions = state.on_load()
@@ -43,7 +46,7 @@ class BootstrapLoadingStateTest(unittest.TestCase):
         state.available_functions = []
         state.function_name = ""
         state.loaded_contract_source = ""
-        state.loaded_contract_runtime_source = ""
+        state.loaded_contract_vm_ir = ""
         state.function_required_params = {}
 
         with (

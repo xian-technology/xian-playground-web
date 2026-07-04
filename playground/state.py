@@ -6,7 +6,6 @@ import os
 import time
 from http.cookies import SimpleCookie
 from typing import Dict, List
-from urllib.parse import quote
 
 import reflex as rx
 from reflex.config import get_config
@@ -19,7 +18,6 @@ from .services import (
     ENVIRONMENT_FIELDS,
     SESSION_COOKIE_NAME,
     SessionNotFoundError,
-    SessionRepository,
     lint_contract as run_lint,
     session_runtime,
 )
@@ -113,9 +111,9 @@ class PlaygroundState(rx.State):
 
     load_selected_contract: str = ""
     loaded_contract_source: str = ""
-    loaded_contract_runtime_source: str = ""
+    loaded_contract_vm_ir: str = ""
     function_required_params: dict[str, List[str]] = {}
-    load_view_local_runtime: bool = False
+    load_view_vm_ir: bool = False
     expanded_panel: str = ""
 
     kwargs_input: str = DEFAULT_KWARGS_INPUT
@@ -129,17 +127,21 @@ class PlaygroundState(rx.State):
     def on_load(self):
         self.bootstrapping = True
         self._bootstrap_remaining = 0
-        session_id = self._cookie_session_id()
-        if not session_id:
+        session_cookie = self._cookie_session_id()
+        if not session_cookie:
             self.session_error = "Session cookie missing. Issuing a fresh session."
             return self._navigate_to_session_route("new")
-        self.session_id = session_id
         try:
-            metadata = session_runtime.ensure_exists(session_id)
+            metadata, _ = session_runtime.resolve_or_create(
+                session_cookie,
+                create_if_missing=False,
+            )
         except SessionNotFoundError:
-            self.session_error = "Session not found. Creating a new one."
+            self.session_error = "Session cookie invalid. Creating a new one."
             return self._navigate_to_session_route("new")
 
+        session_id = metadata.session_id
+        self.session_id = session_id
         self._apply_ui_state(metadata.ui_state or {})
         env_snapshot = session_runtime.get_environment_snapshot(session_id)
         self.environment_editor = {
@@ -177,6 +179,8 @@ class PlaygroundState(rx.State):
             if field == "code_editor" or field not in snapshot:
                 continue
             setattr(self, field, snapshot[field])
+        if "load_view_local_runtime" in snapshot and "load_view_vm_ir" not in snapshot:
+            self.load_view_vm_ir = bool(snapshot["load_view_local_runtime"])
         if self.expanded_panel not in FULLSCREEN_PANELS:
             self.expanded_panel = ""
 
@@ -342,11 +346,7 @@ class PlaygroundState(rx.State):
         config = get_config()
         base = (config.api_url or "").rstrip("/")
         path = suffix.lstrip("/")
-        next_url = self._frontend_origin()
-        query = ""
-        if next_url:
-            encoded = quote(next_url, safe=":/?#[]@!$&'()*+,;=%")
-            query = f"?next={encoded}"
+        query = "?next=/"
         if not base:
             return f"/sessions/{path}{query}"
         return f"{base}/sessions/{path}{query}"
@@ -354,9 +354,10 @@ class PlaygroundState(rx.State):
     def copy_session_id(self):
         if not self.session_id:
             return [rx.toast.error("Session unavailable. Reload the page.")]
+        token = session_runtime.create_resume_token(self.session_id)
         return [
-            rx.set_clipboard(self.session_id),
-            rx.toast.success("Session ID copied."),
+            rx.set_clipboard(token),
+            rx.toast.success("Resume token copied."),
         ]
 
     def _navigate_to_session_route(self, suffix: str):
@@ -368,21 +369,32 @@ class PlaygroundState(rx.State):
         return self._navigate_to_session_route("new")
 
     def update_resume_session_input(self, value: str):
-        self.resume_session_input = (value or "").strip().lower()
+        self.resume_session_input = (value or "").strip()
 
     def resume_session(self):
-        target = (self.resume_session_input or "").strip().lower()
-        if not target:
-            self.session_error = "Enter a session ID to resume."
-            return [rx.toast.error(self.session_error)]
-        if not SessionRepository.is_valid_session_id(target):
-            self.session_error = "Session ID must be a UUID4 hex string."
-            return [rx.toast.error(self.session_error)]
-        if not session_runtime.session_exists(target):
-            self.session_error = "Session not found."
+        token = (self.resume_session_input or "").strip()
+        if not token:
+            self.session_error = "Enter a resume token."
             return [rx.toast.error(self.session_error)]
         self.session_error = ""
-        return self._navigate_to_session_route(target)
+        endpoint = self._session_route_url("resume")
+        script = f"""
+(async () => {{
+    const response = await fetch({json.dumps(endpoint)}, {{
+        method: "POST",
+        credentials: "include",
+        headers: {{"Content-Type": "application/json"}},
+        body: JSON.stringify({{"token": {json.dumps(token)}}}),
+    }});
+    if (!response.ok) {{
+        console.error("Resume token was invalid or expired.");
+        return;
+    }}
+    const payload = await response.json();
+    window.location.assign(payload.redirect || "/");
+}})().catch((error) => console.error("Failed to resume session.", error));
+"""
+        return [rx.call_script(script)]
 
     def save_code_draft(self):
         session_id = self._require_session()
@@ -441,7 +453,7 @@ class PlaygroundState(rx.State):
                 self.function_name = ""
                 self.load_selected_contract = ""
                 self.loaded_contract_source = ""
-                self.loaded_contract_runtime_source = ""
+                self.loaded_contract_vm_ir = ""
                 self.function_required_params = {}
                 return []
 
@@ -507,24 +519,24 @@ class PlaygroundState(rx.State):
         try:
             if not self.load_selected_contract:
                 self.loaded_contract_source = ""
-                self.loaded_contract_runtime_source = ""
+                self.loaded_contract_vm_ir = ""
                 return []
 
             try:
                 details: ContractDetails = session_runtime.get_contract_details(session_id, self.load_selected_contract)
             except Exception as exc:
                 self.loaded_contract_source = ""
-                self.loaded_contract_runtime_source = ""
+                self.loaded_contract_vm_ir = ""
                 return [rx.toast.error(f"Failed to load contract '{self.load_selected_contract}': {exc}")]
 
             self.loaded_contract_source = details.source
-            self.loaded_contract_runtime_source = details.local_runtime_source
+            self.loaded_contract_vm_ir = details.vm_ir_json
             return []
         finally:
             self._finish_bootstrap_step()
 
     def toggle_load_view(self):
-        self.load_view_local_runtime = not self.load_view_local_runtime
+        self.load_view_vm_ir = not self.load_view_vm_ir
 
     def set_show_system_contracts(self, value):
         if isinstance(value, dict):
@@ -588,8 +600,8 @@ class PlaygroundState(rx.State):
         self.function_required_params = {}
         self.load_selected_contract = ""
         self.loaded_contract_source = ""
-        self.loaded_contract_runtime_source = ""
-        self.load_view_local_runtime = False
+        self.loaded_contract_vm_ir = ""
+        self.load_view_vm_ir = False
         self.expanded_panel = ""
         self.kwargs_input = DEFAULT_KWARGS_INPUT
         self.run_result = ""
@@ -715,7 +727,7 @@ class PlaygroundState(rx.State):
         if self.load_selected_contract == target:
             self.load_selected_contract = ""
             self.loaded_contract_source = ""
-            self.loaded_contract_runtime_source = ""
+            self.loaded_contract_vm_ir = ""
         if self.expanded_panel == target:
             self.expanded_panel = ""
 

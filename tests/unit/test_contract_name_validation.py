@@ -4,7 +4,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from playground.services import contracting as contracting_service_module
 from playground.services.contracting import (
     ContractingService,
     _valid_contract_name,
@@ -78,19 +80,48 @@ class ContractNameValidationTest(unittest.TestCase):
 
             self.assertIn("demo_token", service.list_contracts())
 
-    def test_contract_details_return_source_and_local_runtime(self) -> None:
+    def test_contract_details_return_source_and_vm_ir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = ContractingService(storage_home=Path(tmpdir))
             service.deploy("con_demo_token", SIMPLE_CONTRACT)
 
             details = service.get_contract_details("con_demo_token")
+            vm_ir = json.loads(details.vm_ir_json)
 
             self.assertEqual(details.source.strip(), SIMPLE_CONTRACT.strip())
-            self.assertIn("@__export('con_demo_token')", details.local_runtime_source)
+            self.assertEqual(vm_ir["module_name"], "con_demo_token")
+            self.assertTrue(
+                {"set_value", "get"}.issubset(
+                    {function["name"] for function in vm_ir["functions"]}
+                )
+            )
             self.assertNotEqual(
                 details.source.strip(),
-                details.local_runtime_source.strip(),
+                details.vm_ir_json.strip(),
             )
+
+    def test_deploy_and_call_execute_through_vm_core(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ContractingService(storage_home=Path(tmpdir))
+            with patch(
+                "playground.services.contracting.xian_vm_core.execute_contract",
+                wraps=contracting_service_module.xian_vm_core.execute_contract,
+            ) as execute_contract:
+                service.deploy("con_demo_token", SIMPLE_CONTRACT)
+                self.assertEqual(
+                    service.call("con_demo_token", "get", {}).as_string(),
+                    "1",
+                )
+
+        calls = {
+            (
+                call.kwargs["contract_name"],
+                call.kwargs["function_name"],
+            )
+            for call in execute_contract.call_args_list
+        }
+        self.assertIn(("submission", "submit_contract"), calls)
+        self.assertIn(("con_demo_token", "get"), calls)
 
     def test_apply_state_snapshot_rejects_internal_contract_injection(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import os
+import secrets
 import shutil
 import threading
 import time
@@ -19,11 +22,12 @@ from ..defaults import DEFAULT_CONTRACT, DEFAULT_CONTRACT_NAME, DEFAULT_KWARGS_I
 
 
 SESSION_FILE_NAME = "session.json"
+SESSION_RESUME_TOKEN_PREFIX = "xpr1"
 SESSION_UI_FIELDS: tuple[str, ...] = (
     "code_editor",
     "contract_name",
     "kwargs_input",
-    "load_view_local_runtime",
+    "load_view_vm_ir",
     "show_system_contracts",
     "expanded_panel",
     "selected_contract",
@@ -36,7 +40,7 @@ DEFAULT_UI_STATE: Dict[str, Any] = {
     "code_editor": DEFAULT_CONTRACT,
     "contract_name": DEFAULT_CONTRACT_NAME,
     "kwargs_input": DEFAULT_KWARGS_INPUT,
-    "load_view_local_runtime": False,
+    "load_view_vm_ir": False,
     "show_system_contracts": False,
     "expanded_panel": "",
     "selected_contract": "",
@@ -59,6 +63,8 @@ class SessionMetadata:
     session_id: str
     created_at: str
     updated_at: str
+    owner_secret: str
+    resume_token_hash: str | None = None
     environment: Dict[str, Any] = field(default_factory=dict)
     ui_state: Dict[str, Any] = field(default_factory=dict)
 
@@ -69,6 +75,7 @@ class SessionMetadata:
             session_id=session_id,
             created_at=now,
             updated_at=now,
+            owner_secret=SessionRepository.new_owner_secret(),
             environment=dict(DEFAULT_ENVIRONMENT),
             ui_state=dict(DEFAULT_UI_STATE),
         )
@@ -123,6 +130,37 @@ class SessionRepository:
             return False
         return True
 
+    @staticmethod
+    def new_owner_secret() -> str:
+        return secrets.token_urlsafe(32)
+
+    @staticmethod
+    def _hash_resume_token(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _normalize_resume_token(token: str | None) -> str | None:
+        if not token:
+            return None
+        token = token.strip()
+        if not token:
+            return None
+        return token
+
+    @classmethod
+    def _session_id_from_resume_token(cls, token: str | None) -> str | None:
+        token = cls._normalize_resume_token(token)
+        if token is None:
+            return None
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        prefix, session_id, secret = parts
+        if prefix != SESSION_RESUME_TOKEN_PREFIX or not secret:
+            return None
+        session_id = session_id.lower()
+        return session_id if cls.is_valid_session_id(session_id) else None
+
     def _session_dir(self, session_id: str) -> Path:
         return self._root / session_id
 
@@ -165,15 +203,77 @@ class SessionRepository:
             raise SessionNotFoundError(session_id)
         with self._session_lock(normalized):
             data = json.loads(path.read_text())
+        needs_write = False
+        owner_secret = data.get("owner_secret")
+        if not owner_secret:
+            owner_secret = self.new_owner_secret()
+            needs_write = True
         metadata = SessionMetadata(
             session_id=data["session_id"],
             created_at=data["created_at"],
             updated_at=data.get("updated_at", data["created_at"]),
+            owner_secret=owner_secret,
+            resume_token_hash=data.get("resume_token_hash"),
             environment=data.get("environment", dict(DEFAULT_ENVIRONMENT)),
             ui_state=data.get("ui_state", dict(DEFAULT_UI_STATE)),
         )
+        if needs_write:
+            self._write_metadata(metadata)
         # Ensure storage directories exist even if metadata survived but folders were deleted.
         self.storage_home(metadata.session_id)
+        return metadata
+
+    def verify_owner_secret(self, session_id: str, owner_secret: str | None) -> SessionMetadata:
+        """Load metadata only when the browser-bound owner secret matches."""
+        metadata = self.load_metadata(session_id)
+        if not owner_secret or not hmac.compare_digest(metadata.owner_secret, owner_secret):
+            raise SessionNotFoundError(session_id)
+        return metadata
+
+    def create_resume_token(self, session_id: str) -> str:
+        """Create a single-use token that can adopt this session in another browser."""
+        metadata = self.load_metadata(session_id)
+        random_secret = secrets.token_urlsafe(32)
+        token = f"{SESSION_RESUME_TOKEN_PREFIX}.{metadata.session_id}.{random_secret}"
+        updated = replace(
+            metadata,
+            resume_token_hash=self._hash_resume_token(token),
+            updated_at=_utcnow(),
+        )
+        self._write_metadata(updated)
+        return token
+
+    def consume_resume_token(self, token: str | None) -> SessionMetadata:
+        """Consume a resume token and rotate ownership to the consuming browser."""
+        token = self._normalize_resume_token(token)
+        session_id = self._session_id_from_resume_token(token)
+        if token is None or session_id is None:
+            raise SessionNotFoundError("invalid-resume-token")
+        path = self._metadata_path(session_id)
+        if not path.exists():
+            raise SessionNotFoundError(session_id)
+        with self._session_lock(session_id):
+            data = json.loads(path.read_text())
+            metadata = SessionMetadata(
+                session_id=data["session_id"],
+                created_at=data["created_at"],
+                updated_at=data.get("updated_at", data["created_at"]),
+                owner_secret=data.get("owner_secret") or self.new_owner_secret(),
+                resume_token_hash=data.get("resume_token_hash"),
+                environment=data.get("environment", dict(DEFAULT_ENVIRONMENT)),
+                ui_state=data.get("ui_state", dict(DEFAULT_UI_STATE)),
+            )
+            expected = metadata.resume_token_hash or ""
+            supplied = self._hash_resume_token(token)
+            if not hmac.compare_digest(expected, supplied):
+                raise SessionNotFoundError("invalid-resume-token")
+            metadata = replace(
+                metadata,
+                owner_secret=self.new_owner_secret(),
+                resume_token_hash=None,
+                updated_at=_utcnow(),
+            )
+            self._write_metadata(metadata)
         return metadata
 
     def update_metadata(
@@ -213,6 +313,8 @@ class SessionRepository:
             "session_id": metadata.session_id,
             "created_at": metadata.created_at,
             "updated_at": metadata.updated_at,
+            "owner_secret": metadata.owner_secret,
+            "resume_token_hash": metadata.resume_token_hash,
             "environment": metadata.environment,
             "ui_state": metadata.ui_state,
         }

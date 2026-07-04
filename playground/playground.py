@@ -7,11 +7,11 @@ import reflex as rx
 from reflex.components.radix.themes.components.badge import Badge
 from reflex.config import get_config
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
-from urllib.parse import unquote
+from starlette.responses import JSONResponse, RedirectResponse
+from urllib.parse import quote, unquote, urlparse
 
 from .components import MonacoEditor
-from .services import ENVIRONMENT_FIELDS, SessionRepository, session_runtime
+from .services import ENVIRONMENT_FIELDS, SessionNotFoundError, session_runtime
 from .middleware import SessionCookieMiddleware, issue_session_cookie
 from .state import PlaygroundState
 
@@ -407,7 +407,7 @@ def session_panel() -> rx.Component:
     )
 
     resume_input = styled_input(
-        placeholder="Enter an existing session ID",
+        placeholder="Enter a resume token",
         value=PlaygroundState.resume_session_input,
         on_change=PlaygroundState.update_resume_session_input,
         font_family="'Fira Code', 'Monaco', 'Courier New', monospace",
@@ -427,7 +427,7 @@ def session_panel() -> rx.Component:
     )
 
     copy_button = styled_button(
-        "Copy ID",
+        "Copy Resume Token",
         color_scheme="cyan",
         on_click=PlaygroundState.copy_session_id,
         width=button_width,
@@ -480,7 +480,7 @@ def session_panel() -> rx.Component:
     return card(
         section_header(
             "Session",
-            "Every browser session gets its own isolated runtime. Copy the ID to save it or resume one you've stored.",
+            "Every browser session gets its own isolated runtime. Copy a one-time token to resume it elsewhere.",
             icon="shield",
         ),
         rx.vstack(
@@ -912,8 +912,8 @@ def load_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
                 rx.hstack(
                     rx.text(
                         rx.cond(
-                            PlaygroundState.load_view_local_runtime,
-                            "Local runtime",
+                            PlaygroundState.load_view_vm_ir,
+                            "Xian VM IR",
                             "Source",
                         ),
                         color=COLORS["text_secondary"],
@@ -921,7 +921,7 @@ def load_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
                     ),
                     rx.spacer(),
                     rx.switch(
-                        checked=PlaygroundState.load_view_local_runtime,
+                        checked=PlaygroundState.load_view_vm_ir,
                         on_change=lambda value: PlaygroundState.toggle_load_view(),
                         color_scheme="cyan",
                     ),
@@ -932,11 +932,11 @@ def load_section(card_kwargs: Dict[str, Any] | None = None) -> rx.Component:
                 ),
                 rx.box(
                     rx.cond(
-                        PlaygroundState.load_view_local_runtime,
+                        PlaygroundState.load_view_vm_ir,
                         code_viewer(
-                            PlaygroundState.loaded_contract_runtime_source,
-                            "python",
-                            "# Local runtime source unavailable.",
+                            PlaygroundState.loaded_contract_vm_ir,
+                            "json",
+                            "{}",
                             font_size="12px",
                             boxed=False,
                             style=_code_viewer_style(is_fullscreen),
@@ -1549,8 +1549,7 @@ def not_found_page() -> rx.Component:
 (function() {{
     const backendBase = {json.dumps((get_config().api_url or "").rstrip("/"))};
     const path = "/sessions/new";
-    const origin = window.location.origin || "";
-    const nextParam = encodeURIComponent(origin + "/");
+    const nextParam = encodeURIComponent("/");
     const target = (backendBase ? backendBase : "") + path + "?next=" + nextParam;
     window.location.assign(target);
 }})();
@@ -1766,13 +1765,22 @@ app.head_components.append(
 )
 
 
+def _relative_redirect_target(value: str | None) -> str | None:
+    if not value:
+        return None
+    target = unquote(value).strip()
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return None
+    if not target.startswith("/") or target.startswith("//"):
+        return None
+    return target
+
+
 def _frontend_redirect_target(request: Request) -> str:
-    next_param = request.query_params.get("next")
+    next_param = _relative_redirect_target(request.query_params.get("next"))
     if next_param:
-        return unquote(next_param)
-    referer = request.headers.get("referer")
-    if referer:
-        return referer
+        return next_param
     deploy = get_config().deploy_url
     if deploy:
         return deploy
@@ -1782,21 +1790,31 @@ def _frontend_redirect_target(request: Request) -> str:
 async def create_session_route(request: Request):
     metadata = session_runtime.create_session()
     response = RedirectResponse(_frontend_redirect_target(request))
-    issue_session_cookie(response, metadata.session_id, request=request)
+    issue_session_cookie(response, metadata, request=request)
     return response
 
 
 async def resume_session_route(request: Request):
-    raw = request.path_params.get("session_id", "").lower()
-    if not SessionRepository.is_valid_session_id(raw):
-        return RedirectResponse("/sessions/new")
-    if not session_runtime.session_exists(raw):
-        return RedirectResponse("/sessions/new")
-    metadata = session_runtime.ensure_exists(raw)
-    response = RedirectResponse(_frontend_redirect_target(request))
-    issue_session_cookie(response, metadata.session_id, request=request)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    token = payload.get("token") if isinstance(payload, dict) else None
+    try:
+        metadata = session_runtime.consume_resume_token(token)
+    except SessionNotFoundError:
+        return JSONResponse({"error": "Invalid or expired resume token."}, status_code=404)
+
+    response = JSONResponse({"redirect": _frontend_redirect_target(request)})
+    issue_session_cookie(response, metadata, request=request)
     return response
 
 
+async def legacy_resume_session_route(request: Request):
+    target = quote(_frontend_redirect_target(request), safe="/")
+    return RedirectResponse(f"/sessions/new?next={target}")
+
+
 app._api.add_route("/sessions/new", create_session_route, methods=["GET"])
-app._api.add_route("/sessions/{session_id}", resume_session_route, methods=["GET"])
+app._api.add_route("/sessions/resume", resume_session_route, methods=["POST"])
+app._api.add_route("/sessions/{session_id}", legacy_resume_session_route, methods=["GET"])

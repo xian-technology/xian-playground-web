@@ -16,6 +16,8 @@ __all__ = [
     "session_runtime",
     "SESSION_COOKIE_NAME",
     "SESSION_COOKIE_MAX_AGE",
+    "pack_session_cookie",
+    "parse_session_cookie",
     "SessionRepository",
     "SessionMetadata",
     "SessionNotFoundError",
@@ -37,6 +39,8 @@ _EXPORT_MAP = {
         "session_runtime",
         "SESSION_COOKIE_NAME",
         "SESSION_COOKIE_MAX_AGE",
+        "pack_session_cookie",
+        "parse_session_cookie",
     },
     "sessions": {
         "SessionRepository",

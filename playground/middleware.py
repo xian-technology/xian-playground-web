@@ -14,8 +14,10 @@ from .services import (
     SESSION_COOKIE_MAX_AGE,
     SESSION_COOKIE_NAME,
     SessionNotFoundError,
+    pack_session_cookie,
     session_runtime,
 )
+from .services.sessions import SessionMetadata
 
 
 def _env_secure_cookie_override() -> bool | None:
@@ -64,7 +66,7 @@ def _infer_secure_cookie(request: Request | None) -> bool:
 
 def issue_session_cookie(
     response: Response,
-    session_id: str,
+    metadata: SessionMetadata,
     *,
     secure: bool | None = None,
     request: Request | None = None,
@@ -73,7 +75,7 @@ def issue_session_cookie(
     flag = override if override is not None else _infer_secure_cookie(request)
     response.set_cookie(
         SESSION_COOKIE_NAME,
-        session_id,
+        pack_session_cookie(metadata),
         httponly=True,
         samesite="lax",
         secure=flag,
@@ -101,10 +103,10 @@ class SessionCookieMiddleware(BaseHTTPMiddleware):
             metadata, created = None, False
             request.state.session_id = None
         response = await call_next(request)
-        if metadata and (created or incoming != metadata.session_id):
+        if metadata and (created or incoming != pack_session_cookie(metadata)):
             issue_session_cookie(
                 response,
-                metadata.session_id,
+                metadata,
                 secure=self._secure_override,
                 request=request,
             )

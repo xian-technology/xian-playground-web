@@ -13,6 +13,7 @@ from contracting import constants
 from contracting.local import ContractingClient
 from contracting.names import is_safe_contract_name
 from contracting.storage.driver import Driver
+import xian_vm_core
 from xian_runtime_types.decimal import ContractingDecimal
 from xian_runtime_types.time import Datetime
 
@@ -153,7 +154,7 @@ class ContractExportInfo:
 class ContractDetails:
     name: str
     source: str
-    local_runtime_source: str
+    vm_ir_json: str
     exports: List[ContractExportInfo]
 
 
@@ -348,8 +349,16 @@ class ContractingService:
                         require_con_prefix=require_con_prefix
                     )
                 )
-            self._client.submit(code, name=clean_name)
-            self._driver.commit()
+            self._execute_vm_contract(
+                "submission",
+                "submit_contract",
+                {
+                    "name": clean_name,
+                    "code": code,
+                    "owner": None,
+                    "constructor_args": {},
+                },
+            )
 
     @staticmethod
     def _is_internal_state_key(key: str) -> bool:
@@ -463,8 +472,7 @@ class ContractingService:
                             f"Contract '{contract}' is missing '__source__' "
                             "and cannot be restored."
                         )
-                    self._client.submit(source, name=contract)
-                    self._driver.commit()
+                    self.deploy(contract, source)
                     deployed_source = self._driver.get_contract_source(contract)
 
                 if (
@@ -537,21 +545,18 @@ class ContractingService:
 
         with self._lock:
             source = self._driver.get_contract_source(clean_name)
-            local_runtime = self._driver.get_local_contract_runtime(clean_name)
+            vm_ir_json = self._driver.get_contract_ir(clean_name)
 
-        if source is None and local_runtime is None:
+        if source is None and vm_ir_json is None:
             raise ValueError(f"Contract '{clean_name}' is not deployed.")
 
-        display_source = source or local_runtime or ""
+        display_source = source or ""
         exports = self._parse_exports(display_source)
-        local_runtime_source = self._local_runtime_display_source(
-            local_runtime,
-            fallback=display_source,
-        )
+        vm_ir_source = self._vm_ir_display_source(vm_ir_json)
         return ContractDetails(
             name=clean_name,
             source=display_source,
-            local_runtime_source=local_runtime_source,
+            vm_ir_json=vm_ir_source,
             exports=exports,
         )
 
@@ -562,15 +567,14 @@ class ContractingService:
             raise ValueError("No function selected.")
 
         with self._lock:
-            abstract = self._client.get_contract_proxy(contract)
-            if abstract is None:
+            if not self._driver.has_contract(contract):
                 raise ValueError(f"Contract '{contract}' is not deployed.")
-            if not hasattr(abstract, function):
+            source = self._driver.get_contract_source(contract)
+            exports = {export.name for export in self._parse_exports(source or "")}
+            if function not in exports:
                 raise ValueError(f"Function '{function}' not found on contract '{contract}'.")
 
-            fn = getattr(abstract, function)
-            result = fn(**kwargs)
-            self._driver.commit()
+            result = self._execute_vm_contract(contract, function, kwargs)
 
         return ContractingCallResult(result=result)
 
@@ -678,12 +682,60 @@ class ContractingService:
         return exports
 
     @staticmethod
-    def _local_runtime_display_source(
-        local_runtime: str | None,
-        *,
-        fallback: str = "",
+    def _vm_ir_display_source(
+        vm_ir_json: str | None,
     ) -> str:
-        """Return transient local harness source when available, otherwise source."""
-        if local_runtime and local_runtime.strip():
-            return local_runtime
-        return fallback
+        """Return pretty persisted Xian VM IR when available."""
+        if not vm_ir_json or not vm_ir_json.strip():
+            return ""
+        try:
+            return json.dumps(json.loads(vm_ir_json), indent=2, sort_keys=True)
+        except json.JSONDecodeError:
+            return vm_ir_json
+
+    def _vm_context(
+        self,
+        contract_name: str,
+        function_name: str,
+        kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return {
+            "signer": self._client.signer,
+            "caller": self._client.signer,
+            "this": contract_name,
+            "entry": (contract_name, function_name),
+            "owner": self._driver.get_owner(contract_name),
+            "submission_name": (
+                kwargs.get("name")
+                if contract_name == constants.SUBMISSION_CONTRACT_NAME
+                else None
+            ),
+            "now": self._environment.get("now"),
+            "block_num": self._environment.get("block_num"),
+            "block_hash": self._environment.get("block_hash"),
+            "chain_id": self._environment.get("chain_id"),
+        }
+
+    def _execute_vm_contract(
+        self,
+        contract_name: str,
+        function_name: str,
+        kwargs: Dict[str, Any],
+    ) -> Any:
+        output = xian_vm_core.execute_contract(
+            driver=self._driver,
+            contract_name=contract_name,
+            function_name=function_name,
+            args=[],
+            kwargs=kwargs,
+            context=self._vm_context(contract_name, function_name, kwargs),
+            meter=False,
+        )
+        if int(output.status_code) != 0:
+            result = output.result
+            if isinstance(result, BaseException):
+                raise result
+            raise RuntimeError(str(result))
+        self._driver.apply_writes(dict(output.writes))
+        self._driver.commit()
+        return output.result
