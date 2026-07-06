@@ -13,26 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout xian-playground-web
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: xian-playground-web
 
       - name: Checkout xian-contracting
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/xian-contracting
           ref: main
           path: xian-contracting
 
       - name: Checkout xian-linter
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/xian-linter
           ref: main
           path: xian-linter
 
       - name: Checkout xian-py
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/xian-py
           ref: main
@@ -49,7 +49,7 @@ jobs:
           node-version: "24"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v8
 
       - name: Install dependencies
         working-directory: xian-playground-web
