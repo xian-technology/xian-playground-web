@@ -8,7 +8,7 @@ from reflex.components.radix.themes.components.badge import Badge
 from reflex.config import get_config
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import unquote, urlparse
 
 from .components import MonacoEditor
 from .services import ENVIRONMENT_FIELDS, SessionNotFoundError, session_runtime
@@ -1810,11 +1810,5 @@ async def resume_session_route(request: Request):
     return response
 
 
-async def legacy_resume_session_route(request: Request):
-    target = quote(_frontend_redirect_target(request), safe="/")
-    return RedirectResponse(f"/sessions/new?next={target}")
-
-
 app._api.add_route("/sessions/new", create_session_route, methods=["GET"])
 app._api.add_route("/sessions/resume", resume_session_route, methods=["POST"])
-app._api.add_route("/sessions/{session_id}", legacy_resume_session_route, methods=["GET"])

@@ -12,7 +12,6 @@ from starlette.requests import Request
 from playground.playground import (
     _frontend_redirect_target,
     create_session_route,
-    legacy_resume_session_route,
     resume_session_route,
 )
 from playground.services.runtime import (
@@ -92,22 +91,6 @@ class SessionRouteSecurityTest(unittest.TestCase):
         session_id = self.repo.list_sessions()[0]
         metadata = self.repo.load_metadata(session_id)
         self.assertIn(f"{SESSION_COOKIE_NAME}={pack_session_cookie(metadata)}", response.headers["set-cookie"])
-
-    def test_legacy_get_resume_does_not_adopt_supplied_session(self) -> None:
-        session = self.manager.create_session()
-        response = asyncio.run(
-            legacy_resume_session_route(
-                _request(
-                    path=f"/sessions/{session.session_id}",
-                    query_string="next=%2F",
-                    path_params={"session_id": session.session_id},
-                )
-            )
-        )
-
-        self.assertEqual(response.status_code, 307)
-        self.assertTrue(response.headers["location"].startswith("/sessions/new"))
-        self.assertNotIn("set-cookie", response.headers)
 
     def test_post_resume_consumes_single_use_token_and_sets_bound_cookie(self) -> None:
         session = self.manager.create_session()
