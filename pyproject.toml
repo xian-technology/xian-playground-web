@@ -9,7 +9,7 @@ dependencies = [
     "reflex>=0.9.0,<0.10.0",
     "xian-tech-contracting>=1.0.1,<2.0.0",
     "xian-tech-linter>=0.3.1,<1.0.0",
-    "xian-tech-py>=0.4.8,<0.5.0",
+    "xian-tech-py>=0.5.0,<0.6",
     "xian-tech-runtime-types>=0.1.1,<0.2.0",
     "xian-tech-vm-core>=0.1.0,<0.2.0",
 ]
