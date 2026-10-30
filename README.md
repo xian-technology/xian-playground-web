@@ -92,6 +92,8 @@ split-port nginx config below.
 - **Resource caps are configurable.** Upload sizes, activity-log size,
   session TTL, and worker RPC timeouts are tunable through environment
   variables (see below).
+- **Worker shutdown is bounded.** An exited worker does not require a shutdown
+  reply. A worker that does not acknowledge shutdown is terminated and joined.
 
 ## Configuration
 

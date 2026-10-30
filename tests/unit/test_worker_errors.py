@@ -88,3 +88,55 @@ class WorkerErrorUtilitiesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExitedWorker(ContractingWorker):
+    def run(self):
+        return
+
+
+def test_stop_returns_after_child_exits(tmp_path):
+    worker = ExitedWorker(tmp_path)
+    worker.start()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    stopped = threading.Event()
+
+    def stop_worker():
+        try:
+            worker.stop()
+        finally:
+            stopped.set()
+
+    stopper = threading.Thread(target=stop_worker, daemon=True)
+    stopper.start()
+    finished = stopped.wait(3)
+    if not finished:
+        # Release the inherited endpoint so a failing test cannot leak a thread.
+        if worker._child_conn is not None:
+            worker._child_conn.close()
+        stopper.join(timeout=5)
+    assert finished, "stop() blocked waiting for a reply from an exited worker"
+
+
+class UnresponsiveWorker(ContractingWorker):
+    def run(self):
+        # Read shutdown without acknowledging it, as a stuck worker might do.
+        self._child_conn.recv()
+        threading.Event().wait()
+
+
+def test_stop_terminates_worker_that_never_acknowledges(tmp_path):
+    worker = UnresponsiveWorker(tmp_path)
+    worker.start()
+    stopper = threading.Thread(target=worker.stop, daemon=True)
+    stopper.start()
+    stopper.join(timeout=7)
+    finished = not stopper.is_alive()
+    if worker.is_alive():
+        worker.terminate()
+        worker.join(timeout=3)
+    stopper.join(timeout=3)
+    assert finished, "stop() waited indefinitely for a shutdown acknowledgement"
+    assert worker._stopped
+    assert not worker.is_alive()

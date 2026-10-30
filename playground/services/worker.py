@@ -25,6 +25,8 @@ class ContractingWorker(mp.Process):
         self._rpc_timeout = DEFAULT_RPC_TIMEOUT if rpc_timeout is None else rpc_timeout
 
     def run(self) -> None:
+        if self._parent_conn is not None:
+            self._parent_conn.close()
         from .contracting import ContractingService  # Local import for spawn safety
 
         service = ContractingService(storage_home=Path(self._storage_home))
@@ -59,6 +61,8 @@ class ContractingWorker(mp.Process):
         self._parent_conn = parent_conn
         self._child_conn = child_conn
         super().start()
+        child_conn.close()
+        self._child_conn = None
         self._lock = threading.Lock()
 
     def invoke(self, command: str, *args, **kwargs):
@@ -99,7 +103,8 @@ class ContractingWorker(mp.Process):
                 conn = self._parent_conn
                 if conn is not None:
                     conn.send(("__shutdown__", (), {}))
-                    conn.recv()
+                    if conn.poll(2):
+                        conn.recv()
         except (EOFError, BrokenPipeError):
             pass
         finally:
@@ -110,6 +115,7 @@ class ContractingWorker(mp.Process):
             self.join(timeout=2)
             if self.is_alive():
                 self.terminate()
+                self.join(timeout=2)
             self._stopped = True
             self._dead = True
 
