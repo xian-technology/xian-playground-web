@@ -4,8 +4,11 @@ import ast
 import json
 import os
 import time
+from decimal import Decimal
 from http.cookies import SimpleCookie
 from typing import Dict, List
+
+from xian_runtime_types.numeric_wire import normalize_wire_numbers
 
 import reflex as rx
 from reflex.config import get_config
@@ -994,7 +997,7 @@ class PlaygroundState(rx.State):
         if not raw:
             return {}
         try:
-            data = json.loads(raw)
+            data = json.loads(raw, parse_float=Decimal)
         except json.JSONDecodeError:
             try:
                 data = ast.literal_eval(raw)
@@ -1002,7 +1005,10 @@ class PlaygroundState(rx.State):
                 raise ValueError(f"Cannot parse kwargs: {exc}") from exc
         if not isinstance(data, dict):
             raise ValueError("Kwargs must evaluate to a dictionary.")
-        return data
+        try:
+            return normalize_wire_numbers(data)
+        except (TypeError, OverflowError) as exc:
+            raise ValueError(str(exc)) from exc
 
     def run_contract(self):
         if not self.selected_contract:

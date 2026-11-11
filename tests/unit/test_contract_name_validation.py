@@ -4,8 +4,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from playground.state import PlaygroundState
 from playground.services import contracting as contracting_service_module
 from playground.services.contracting import (
     ContractingService,
@@ -155,6 +157,36 @@ class ContractNameValidationTest(unittest.TestCase):
             )
             details = service.get_contract_details("con_demo_token")
             self.assertEqual(details.source.strip(), SIMPLE_CONTRACT.strip())
+
+    def test_nested_decimal_inputs_survive_snapshot_restore(self) -> None:
+        fraction = "0.100000000000000000000000000001"
+        kwargs = PlaygroundState._parse_kwargs(
+            SimpleNamespace(kwargs_input='{"v": {"amount": ' + fraction + '}}')
+        )
+        self.assertEqual(kwargs, {"v": {"amount": {"__fixed__": fraction}}})
+        contract = """
+value = Variable()
+
+@export
+def store(v: dict):
+    value.set(v)
+
+@export
+def increment() -> decimal:
+    return value.get()["amount"] + 1
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ContractingService(storage_home=Path(tmpdir))
+            service.deploy("con_snapshot", contract)
+            service.call("con_snapshot", "store", kwargs)
+            snapshot = json.loads(service.dump_state(True))
+            self.assertEqual(snapshot["con_snapshot"]["value"], kwargs["v"])
+            service.reset_state()
+            service.restore_state_snapshot(snapshot)
+            self.assertEqual(
+                service.call("con_snapshot", "increment", {}).as_string(),
+                "1.100000000000000000000000000001",
+            )
 
     def test_restore_state_snapshot_ignores_submission_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

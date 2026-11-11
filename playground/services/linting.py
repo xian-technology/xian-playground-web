@@ -36,6 +36,6 @@ atexit.register(_EXECUTOR.shutdown, wait=False)
 def lint_contract(code: str) -> List[str]:
     """Run the linter synchronously using xian-linter's inline helper."""
 
-    future = _EXECUTOR.submit(lint_code_inline, code)
+    future = _EXECUTOR.submit(lint_code_inline, code, mode="xian_vm_v2")
     errors = future.result()
     return [_format_error(error) for error in errors]

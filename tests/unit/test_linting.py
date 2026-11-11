@@ -20,7 +20,7 @@ class LintingHelpersTest(unittest.TestCase):
             inline.return_value = [mock_error_with_position, mock_error_without_position]
             results = lint_contract("contract code")
 
-        inline.assert_called_once_with("contract code")
+        inline.assert_called_once_with("contract code", mode="xian_vm_v2")
         self.assertEqual(results, ["Line 1, Col 2: boom", "oops"])
 
 

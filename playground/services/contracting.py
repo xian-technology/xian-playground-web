@@ -15,6 +15,7 @@ from contracting.names import is_safe_contract_name
 from contracting.storage.driver import Driver
 import xian_vm_core
 from xian_runtime_types.decimal import ContractingDecimal
+from xian_runtime_types.numeric_wire import decode_wire_numbers, normalize_wire_numbers
 from xian_runtime_types.time import Datetime
 
 from .environment import stringify_environment_value
@@ -107,20 +108,20 @@ def _is_export_decorator(node: ast.AST) -> bool:
     return False
 
 
-def _serialize_value(value: Any) -> Any:
+def _serialize_value(value: Any, *, typed: bool = False) -> Any:
     """Convert contracting values to JSON-serializable primitives."""
-    if isinstance(value, ContractingDecimal):
-        return str(value)
-    if isinstance(value, decimal.Decimal):
-        return str(value)
+    if typed and type(value) is int:
+        return normalize_wire_numbers(value)
+    if isinstance(value, (ContractingDecimal, decimal.Decimal)):
+        return normalize_wire_numbers(value) if typed else str(value)
     if isinstance(value, Datetime):
         return str(value)
     if isinstance(value, bytes):
         return value.hex()
     if isinstance(value, dict):
-        return {str(k): _serialize_value(v) for k, v in value.items()}
+        return {str(k): _serialize_value(v, typed=typed) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
-        return [_serialize_value(v) for v in value]
+        return [_serialize_value(v, typed=typed) for v in value]
     return value
 
 
@@ -165,7 +166,7 @@ class ContractingService:
         storage_home = storage_home or _default_storage_home()
         self._storage_home = storage_home
         self._lock = threading.RLock()
-        self._driver = Driver(storage_home=storage_home)
+        self._driver = Driver(vm_profile="xian_vm_v2", storage_home=storage_home)
         self._client = ContractingService._create_client(driver=self._driver)
         self._environment = self._client.environment
         self._apply_default_environment()
@@ -173,7 +174,7 @@ class ContractingService:
 
     @staticmethod
     def _create_client(driver: Driver) -> ContractingClient:
-        return ContractingClient(driver=driver, signer=DEFAULT_SIGNER)
+        return ContractingClient(vm_profile="xian_vm_v2", driver=driver, signer=DEFAULT_SIGNER)
 
     def get_signer(self) -> str:
         with self._lock:
@@ -323,7 +324,7 @@ class ContractingService:
             return ""
 
         try:
-            parsed = json.loads(text)
+            parsed = json.loads(text, parse_float=decimal.Decimal)
             return parsed
         except json.JSONDecodeError:
             return text
@@ -388,7 +389,7 @@ class ContractingService:
                 )
             if self._is_internal_state_key(key):
                 continue
-            public_entries.append((key, value))
+            public_entries.append((key, decode_wire_numbers(value)))
 
         if not public_entries and entries:
             return
@@ -585,7 +586,7 @@ class ContractingService:
             contract_files = self._driver.get_contract_files()
             for name in contract_files:
                 snapshot[name] = {
-                    key.removeprefix(f"{name}{constants.INDEX_SEPARATOR}"): _serialize_value(value)
+                    key.removeprefix(f"{name}{constants.INDEX_SEPARATOR}"): _serialize_value(value, typed=True)
                     for key, value in self._driver.items(f"{name}{constants.INDEX_SEPARATOR}").items()
                     if (
                         show_internal
@@ -599,7 +600,7 @@ class ContractingService:
                 contract, _, suffix = key.partition(constants.INDEX_SEPARATOR)
                 if not show_internal and suffix.startswith("__"):
                     continue
-                runtime_snapshot.setdefault(contract, {})[suffix] = _serialize_value(value)
+                runtime_snapshot.setdefault(contract, {})[suffix] = _serialize_value(value, typed=True)
 
             if runtime_snapshot:
                 snapshot["__runtime__"] = runtime_snapshot
@@ -624,7 +625,7 @@ class ContractingService:
     def reset_state(self) -> None:
         with self._lock:
             self._driver.flush_full()
-            self._driver = Driver(storage_home=self._storage_home)
+            self._driver = Driver(vm_profile="xian_vm_v2", storage_home=self._storage_home)
         self._client = ContractingService._create_client(driver=self._driver)
         self._environment = self._client.environment
         self._apply_default_environment()
@@ -723,6 +724,7 @@ class ContractingService:
         kwargs: Dict[str, Any],
     ) -> Any:
         output = xian_vm_core.execute_contract(
+            vm_profile="xian_vm_v2",
             driver=self._driver,
             contract_name=contract_name,
             function_name=function_name,

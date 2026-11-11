@@ -2,7 +2,7 @@
 
 `xian-playground-web` is the interactive in-browser playground for the
 Xian contracting engine. Users author, lint, deploy, and call smart
-contracts in the browser while the backend executes persisted `xian_vm_v1`
+contracts in the browser while the backend executes persisted `xian_vm_v2`
 IR through `xian-vm-core` in a per-session sandbox. It is a developer test
 surface, not a live node.
 
@@ -77,7 +77,7 @@ split-port nginx config below.
 ## Principles
 
 - **Per-session Xian VM.** The backend compiles submitted source to
-  validator-style `xian_vm_v1` IR and executes deploy/call requests through
+  validator-style `xian_vm_v2` IR and executes deploy/call requests through
   `xian-vm-core`, with isolated state on disk. There is no shared chain.
 - **Single-process session manager.** Session metadata locks live in
   memory. Do not set `REFLEX_REDIS_URL` — multiple Reflex workers would

@@ -4,7 +4,7 @@
 
 This package is the Reflex application behind the contract playground: the
 in-browser editor UI, per-session sandboxes, and the services that run the
-`xian_vm_v1` execution path.
+`xian_vm_v2` execution path.
 
 ## Contents
 
