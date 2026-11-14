@@ -13,7 +13,6 @@ from contracting import constants
 from contracting.local import ContractingClient
 from contracting.names import is_safe_contract_name
 from contracting.storage.driver import Driver
-import xian_vm_core
 from xian_runtime_types.decimal import ContractingDecimal
 from xian_runtime_types.numeric_wire import decode_wire_numbers, normalize_wire_numbers
 from xian_runtime_types.time import Datetime
@@ -694,50 +693,24 @@ class ContractingService:
         except json.JSONDecodeError:
             return vm_ir_json
 
-    def _vm_context(
-        self,
-        contract_name: str,
-        function_name: str,
-        kwargs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        return {
-            "signer": self._client.signer,
-            "caller": self._client.signer,
-            "this": contract_name,
-            "entry": (contract_name, function_name),
-            "owner": self._driver.get_owner(contract_name),
-            "submission_name": (
-                kwargs.get("name")
-                if contract_name == constants.SUBMISSION_CONTRACT_NAME
-                else None
-            ),
-            "now": self._environment.get("now"),
-            "block_num": self._environment.get("block_num"),
-            "block_hash": self._environment.get("block_hash"),
-            "chain_id": self._environment.get("chain_id"),
-        }
-
     def _execute_vm_contract(
         self,
         contract_name: str,
         function_name: str,
         kwargs: Dict[str, Any],
     ) -> Any:
-        output = xian_vm_core.execute_contract(
-            vm_profile="xian_vm_v2",
-            driver=self._driver,
+        """Run one call the way the local client does (vm-core ``execute_tx``
+        with the code a block runs, no fees) as the playground's signer and in
+        its environment; a success's writes are committed."""
+        output = self._client.executor.execute(
+            sender=self._client.signer,
             contract_name=contract_name,
             function_name=function_name,
-            args=[],
             kwargs=kwargs,
-            context=self._vm_context(contract_name, function_name, kwargs),
-            meter=False,
+            environment=dict(self._environment),
+            metering=False,
+            auto_commit=True,
         )
-        if int(output.status_code) != 0:
-            result = output.result
-            if isinstance(result, BaseException):
-                raise result
-            raise RuntimeError(str(result))
-        self._driver.apply_writes(dict(output.writes))
-        self._driver.commit()
-        return output.result
+        if output["status_code"] != 0:
+            raise output["result"]
+        return output["result"]

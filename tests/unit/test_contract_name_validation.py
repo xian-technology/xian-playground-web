@@ -7,8 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import xian_vm_core
+
 from playground.state import PlaygroundState
-from playground.services import contracting as contracting_service_module
 from playground.services.contracting import (
     ContractingService,
     _valid_contract_name,
@@ -106,9 +107,9 @@ class ContractNameValidationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             service = ContractingService(storage_home=Path(tmpdir))
             with patch(
-                "playground.services.contracting.xian_vm_core.execute_contract",
-                wraps=contracting_service_module.xian_vm_core.execute_contract,
-            ) as execute_contract:
+                "xian_vm_core.execute_tx",
+                wraps=xian_vm_core.execute_tx,
+            ) as execute_tx:
                 service.deploy("con_demo_token", SIMPLE_CONTRACT)
                 self.assertEqual(
                     service.call("con_demo_token", "get", {}).as_string(),
@@ -120,7 +121,7 @@ class ContractNameValidationTest(unittest.TestCase):
                 call.kwargs["contract_name"],
                 call.kwargs["function_name"],
             )
-            for call in execute_contract.call_args_list
+            for call in execute_tx.call_args_list
         }
         self.assertIn(("submission", "submit_contract"), calls)
         self.assertIn(("con_demo_token", "get"), calls)
