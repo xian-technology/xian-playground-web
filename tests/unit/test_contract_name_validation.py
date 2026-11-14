@@ -126,6 +126,21 @@ class ContractNameValidationTest(unittest.TestCase):
         self.assertIn(("submission", "submit_contract"), calls)
         self.assertIn(("con_demo_token", "get"), calls)
 
+    def test_calls_are_not_metered(self) -> None:
+        # The playground runs calls without a chi budget: work that would
+        # exhaust a metered call's default chi still completes.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ContractingService(storage_home=Path(tmpdir))
+            service.deploy(
+                "con_busy",
+                "@export\ndef spin(n: int) -> int:\n"
+                "    total = 0\n    for i in range(n):\n        total += i\n    return total\n",
+            )
+
+            result = service.call("con_busy", "spin", {"n": 300_000})
+
+            self.assertEqual(result.as_string(), "44999850000")
+
     def test_apply_state_snapshot_rejects_internal_contract_injection(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = ContractingService(storage_home=Path(tmpdir))
