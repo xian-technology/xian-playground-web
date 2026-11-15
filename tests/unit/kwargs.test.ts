@@ -65,12 +65,11 @@ describe("parseField (one typed input to exact wire JSON)", () => {
     expect(() => field("any", "alice")).toThrow(/quotes/);
   });
 
-  it("builds typed set members", () => {
-    expect(field("set", '[1, "a", null, true, 1.5]')).toBe(
-      '{"__set__":{"codec":"xian-set-1","items":[["int","1"],["str","a"],["none"],["bool",true],["fixed","1500000000000000000000000000000"]]}}',
-    );
-    expect(field("frozenset", "[]")).toBe('{"__frozenset__":{"codec":"xian-set-1","items":[]}}');
-    expect(() => field("set", "[[1]]")).toThrow(/set members/);
+  it("reads sets as their canonical wire envelope (the VM checks member order)", () => {
+    const envelope = '{"__set__":{"codec":"xian-set-1","items":[["int","1"]]}}';
+    expect(field("set", envelope)).toBe(envelope);
+    expect(() => field("set", "[1, 2]")).toThrow(/__set__/);
+    expect(() => field("frozenset", '{"__set__":{"codec":"xian-set-1","items":[]}}')).toThrow(/__frozenset__/);
   });
 });
 

@@ -18,7 +18,6 @@ export type KwargsResult =
 const SECONDS_PER_DAY = 86_400n;
 const MAX_TIMEDELTA_DAYS = 999_999_999n;
 const DATETIME = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?)?$/;
-const SET_CODEC = "xian-set-1";
 
 type FieldParser = (text: string) => JsonNode;
 
@@ -140,39 +139,14 @@ function isWrapper(node: JsonNode): boolean {
   return node.t === "obj" && node.entries.length === 1 && /^__\w+__$/.test(node.entries[0]![0]);
 }
 
-/** A JSON array of scalars becomes the VM's typed set member envelope. */
+/**
+ * Sets travel as the VM's canonical `xian-set-1` envelope; the VM refuses
+ * members out of canonical order, so the field takes the envelope as JSON.
+ */
 function setWrapper(tag: "__set__" | "__frozenset__", text: string): JsonNode {
-  const node = expectJson(text, "arr", "Enter a JSON array such as [1, \"a\"].");
-  const items = (node as Extract<JsonNode, { t: "arr" }>).items.map(setMember);
-  return json.obj([[tag, json.obj([["codec", json.str(SET_CODEC)], ["items", json.arr(items)]])]]);
-}
-
-function setMember(node: JsonNode): JsonNode {
-  switch (node.t) {
-    case "null":
-      return json.arr([json.str("none")]);
-    case "bool":
-      return json.arr([json.str("bool"), node]);
-    case "str":
-      return json.arr([json.str("str"), node]);
-    case "num":
-      return json.arr([json.str("int"), json.str(node.raw)]);
-    case "obj": {
-      const [tag, payload] = node.entries[0] ?? [];
-      if (node.entries.length === 1 && payload?.t === "str") {
-        if (tag === "__fixed__") return json.arr([json.str("fixed"), json.str(scaledFixed(payload.v))]);
-        if (tag === "__big_int__") return json.arr([json.str("int"), payload]);
-      }
-      break;
-    }
+  const node = userJson(text);
+  if (node.t !== "obj" || node.entries.length !== 1 || node.entries[0]![0] !== tag) {
+    throw new Error(`Enter a ${tag} envelope, e.g. {"${tag}": {"codec": "xian-set-1", "items": [["int", "1"]]}}.`);
   }
-  throw new Error("set members must be null, true/false, numbers or strings.");
-}
-
-/** A canonical decimal as its integer scaled by 10^30 (the set codec's `fixed`). */
-function scaledFixed(canonical: string): string {
-  const negative = canonical.startsWith("-");
-  const [whole = "", fraction = ""] = canonical.replace("-", "").split(".");
-  const digits = (whole + fraction.padEnd(DECIMAL_SCALE, "0")).replace(/^0+(?=\d)/, "");
-  return negative && digits !== "0" ? `-${digits}` : digits;
+  return node;
 }

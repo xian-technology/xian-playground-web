@@ -1,23 +1,27 @@
 /**
  * The playground's view of the in-browser chain. One small interface the UI
- * codes against; `wasm-engine.ts` implements it on top of `@xian-tech/vm`.
+ * codes against; `vm-engine.ts` implements it on top of `@xian-tech/vm`
+ * (the node's xian-vm-core compiled to WebAssembly), and `worker-engine.ts`
+ * runs that inside a Web Worker.
  * Every contract value crosses this boundary as V2 wire JSON text, never as a
  * JavaScript number.
  */
 
-export interface ExecutionEnvironment {
-  signer: string;
+/** The block a transaction runs in (the signer travels on the request). */
+export interface BlockEnvironment {
   /** ISO 8601 local time, e.g. 2024-02-01T12:30:00. */
   now: string;
   /** Integer text. */
   blockNum: string;
   blockHash: string;
   chainId: string;
+  /** Seed input for `random.*`; empty means contracts cannot use randomness. */
+  inputHash: string;
 }
 
 export interface Metering {
   enabled: boolean;
-  /** Integer text; ignored when metering is off. */
+  /** Integer text; empty means the VM ceiling. Ignored when metering is off. */
   chiLimit: string;
 }
 
@@ -31,18 +35,24 @@ export interface StateWrite {
 export interface EmittedEvent {
   contract: string;
   event: string;
-  /** Wire JSON text of the event payload. */
+  /** Wire JSON text of the signer and caller. */
+  signer: string;
+  caller: string;
+  /** Wire JSON dict texts of the indexed and the plain event fields. */
+  dataIndexed: string;
   data: string;
 }
 
 export interface ExecutionOutcome {
   ok: boolean;
-  /** Return value as wire JSON text (`null` text when the function returned nothing). */
+  /** True when the VM refused the request before running it (e.g. malformed kwargs). */
+  rejected: boolean;
+  /** Return value as wire JSON text (`null` when the function returned nothing); null when rejected. */
   result: string | null;
   /** Error message when `ok` is false. */
   error: string | null;
-  /** Chi used as integer text, null when the engine did not meter. */
-  chiUsed: string | null;
+  /** Chi used (always a safe integer, bounded by the VM ceiling); 0 when unmetered. */
+  chiUsed: number;
   writes: StateWrite[];
   events: EmittedEvent[];
 }
@@ -53,21 +63,24 @@ export interface ContractArtifact {
   vmIrJson: string;
 }
 
+/** Like `submission.submit_contract`: the VM compiles the source itself. */
 export interface DeployRequest {
+  signer: string;
   name: string;
-  artifact: ContractArtifact;
+  source: string;
   /** Wire JSON object text. */
   constructorKwargs: string;
-  environment: ExecutionEnvironment;
+  environment: BlockEnvironment;
   metering: Metering;
 }
 
 export interface CallRequest {
+  signer: string;
   contract: string;
   function: string;
   /** Wire JSON object text. */
   kwargs: string;
-  environment: ExecutionEnvironment;
+  environment: BlockEnvironment;
   metering: Metering;
 }
 

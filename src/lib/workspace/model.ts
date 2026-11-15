@@ -6,6 +6,7 @@
  */
 
 import { contractNameError } from "@/lib/contract/names";
+import type { BlockEnvironment } from "@/lib/engine/types";
 import { parseWireJson } from "@/lib/values/wire";
 
 export const WORKSPACE_FORMAT = "xian-playground-workspace";
@@ -38,18 +39,14 @@ def balance_of(account: str):
     return balances[account]
 `;
 
-export interface EnvironmentSettings {
+/** The signer plus the block environment transactions run in. */
+export interface EnvironmentSettings extends BlockEnvironment {
   signer: string;
-  /** ISO 8601 local time, e.g. 2024-02-01T12:30:00. */
-  now: string;
-  blockNum: string;
-  blockHash: string;
-  chainId: string;
 }
 
 export interface MeteringSettings {
   enabled: boolean;
-  /** Chi budget as integer text. */
+  /** Chi budget as integer text; empty means the VM ceiling. */
   chiLimit: string;
 }
 
@@ -77,9 +74,11 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   blockNum: "100",
   blockHash: "0xabc...",
   chainId: "playground-local",
+  inputHash: "playground-seed",
 };
 
-export const DEFAULT_METERING: MeteringSettings = { enabled: false, chiLimit: "200000" };
+/** Metered like the chain; an empty budget means the VM ceiling (1,000,000 chi). */
+export const DEFAULT_METERING: MeteringSettings = { enabled: true, chiLimit: "" };
 
 export function defaultWorkspace(): WorkspaceDoc {
   return {
@@ -139,6 +138,7 @@ export function parseWorkspaceDoc(input: unknown): WorkspaceDoc {
       blockNum: string(env.blockNum, "environment.blockNum"),
       blockHash: string(env.blockHash, "environment.blockHash"),
       chainId: string(env.chainId, "environment.chainId"),
+      inputHash: string(env.inputHash, "environment.inputHash"),
     },
     metering: {
       enabled: boolean(metering.enabled, "metering.enabled"),

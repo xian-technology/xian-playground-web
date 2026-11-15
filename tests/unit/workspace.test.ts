@@ -6,7 +6,7 @@ const valid = () => ({
   format: "xian-playground-workspace",
   version: 1,
   editor: { code: "x = 1", contractName: "con_x" },
-  environment: { signer: "alice", now: "2024-02-01T12:30:00", blockNum: "100", blockHash: "0xabc", chainId: "playground-local" },
+  environment: { signer: "alice", now: "2024-02-01T12:30:00", blockNum: "100", blockHash: "0xabc", chainId: "playground-local", inputHash: "seed" },
   metering: { enabled: false, chiLimit: "200000" },
   contracts: [
     { name: "con_x", source: "v = Variable()", constructorKwargs: "{}", state: [["v", '{"__fixed__":"1.5"}']] },
@@ -20,7 +20,8 @@ describe("defaultWorkspace", () => {
     expect(ws.environment.signer).toBe("demo");
     expect(ws.environment.now).toBe("2024-02-01T12:30:00");
     expect(ws.environment.blockNum).toBe("100");
-    expect(ws.metering.enabled).toBe(false);
+    expect(ws.metering).toEqual({ enabled: true, chiLimit: "" });
+    expect(ws.environment.inputHash).toBe("playground-seed");
     expect(ws.contracts).toEqual([]);
   });
 });
