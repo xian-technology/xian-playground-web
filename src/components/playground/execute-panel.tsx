@@ -89,7 +89,8 @@ function TargetPicker({ selection }: { selection: Selection }) {
 }
 
 function ExecuteBody({ selection, kwargs, run }: { selection: Selection; kwargs: KwargsInput; run(): void }) {
-  const lastRun = usePlayground((state) => state.lastRun);
+  // Deploy results are shown in the Write panel; this one shows calls.
+  const lastRun = usePlayground((state) => (state.lastRun?.kind === "call" ? state.lastRun : null));
   const { contract, method } = selection;
   if (!contract) {
     const description =

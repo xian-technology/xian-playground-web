@@ -70,6 +70,7 @@ describe("ExecutePanel", () => {
     const { controller } = await deployed();
     const call = vi.spyOn(controller, "call");
     renderWith(controller, <ExecutePanel />);
+    expect(screen.getByText(/Run a function to see its result/)).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Function" }).textContent).toBe("balance_of");
     fireEvent.change(screen.getByLabelText("account"), { target: { value: "bob" } });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Run/ })));
