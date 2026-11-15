@@ -6,7 +6,7 @@
  * committed before the runaway call.
  */
 
-import type { RpcRequest, RpcResponse } from "./rpc";
+import type { RpcRequest, RpcResponse, WorkerMessage } from "./rpc";
 import type {
   CallRequest,
   DeployedContract,
@@ -19,7 +19,7 @@ import type {
 
 export interface WorkerLike {
   postMessage(message: RpcRequest): void;
-  addEventListener(type: "message", listener: (event: MessageEvent<RpcResponse>) => void): void;
+  addEventListener(type: "message", listener: (event: MessageEvent<WorkerMessage>) => void): void;
   addEventListener(type: "error", listener: (event: ErrorEvent) => void): void;
   terminate(): void;
 }
@@ -35,6 +35,7 @@ export class EngineTimeoutError extends Error {}
 
 export class WorkerEngine implements PlaygroundEngine {
   private worker!: WorkerLike;
+  private ready!: Promise<void>;
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private checkpoint: string | null = null;
@@ -88,7 +89,12 @@ export class WorkerEngine implements PlaygroundEngine {
 
   private start(): void {
     this.worker = this.spawn();
-    this.worker.addEventListener("message", (event) => this.settle(event.data));
+    let markReady!: () => void;
+    this.ready = new Promise((resolve) => (markReady = resolve));
+    this.worker.addEventListener("message", (event) => {
+      if ("ready" in event.data) markReady();
+      else this.settle(event.data);
+    });
     this.worker.addEventListener("error", (event) => this.failAll(new Error(event.message || "The engine worker crashed.")));
   }
 
@@ -107,9 +113,10 @@ export class WorkerEngine implements PlaygroundEngine {
 
   private send(method: RpcRequest["method"], args: unknown[]): Promise<unknown> {
     const id = this.nextId++;
+    const worker = this.worker;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.worker.postMessage({ id, method, args });
+      void this.ready.then(() => worker.postMessage({ id, method, args }));
     });
   }
 

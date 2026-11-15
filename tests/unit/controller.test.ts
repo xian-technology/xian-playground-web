@@ -41,7 +41,10 @@ class ToyEngine implements PlaygroundEngine {
     return [...this.store].sort().map(([key, value]) => ({ key, value }));
   }
   async writeState(writes: StateWrite[]) {
-    for (const { key, value } of writes) value === null ? this.store.delete(key) : this.store.set(key, value);
+    for (const { key, value } of writes) {
+      if (value === null) this.store.delete(key);
+      else this.store.set(key, value);
+    }
   }
   async removeContract(name: string) {
     for (const key of [...this.store.keys()]) if (key.startsWith(`${name}.`)) this.store.delete(key);

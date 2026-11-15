@@ -10,7 +10,7 @@ export default defineConfig({
   test: {
     include: ["tests/unit/**/*.test.ts", "tests/unit/**/*.test.tsx"],
     environment: "node",
-    server: { deps: { inline: ["@xian-tech/compiler"] } },
+    server: { deps: { inline: ["@xian-tech/compiler", "@xian-tech/vm"] } },
     coverage: {
       provider: "v8",
       include: ["src/lib/**/*.ts"],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { serveEngine, type MessagePortLike, type RpcRequest, type RpcResponse } from "@/lib/engine/rpc";
+import { serveEngine, type MessagePortLike, type RpcRequest, type RpcResponse, type WorkerMessage } from "@/lib/engine/rpc";
 import type { CallRequest, ExecutionOutcome, PlaygroundEngine } from "@/lib/engine/types";
 import { WorkerEngine, type WorkerLike } from "@/lib/engine/worker-engine";
 
@@ -45,18 +45,20 @@ function spawnFake(engines: MemoryEngine[], terminated: number[]): () => WorkerL
     const engine = new MemoryEngine();
     engines.push(engine);
     const index = engines.length - 1;
-    const toPage: ((event: MessageEvent<RpcResponse>) => void)[] = [];
+    const toPage: ((event: MessageEvent<WorkerMessage>) => void)[] = [];
     const toWorker: ((event: MessageEvent) => void)[] = [];
     let alive = true;
     const workerSide: MessagePortLike = {
-      postMessage: (message) => queueMicrotask(() => alive && toPage.forEach((l) => l({ data: message } as MessageEvent<RpcResponse>))),
+      postMessage: (message) => queueMicrotask(() => alive && toPage.forEach((l) => l({ data: message } as MessageEvent<WorkerMessage>))),
       addEventListener: (_type, listener) => toWorker.push(listener),
     };
-    serveEngine(engine, workerSide);
+    // Like a module worker still awaiting its WebAssembly: messages sent
+    // before the engine listens are lost.
+    setTimeout(() => serveEngine(engine, workerSide), 5);
     return {
       postMessage: (message: RpcRequest) => queueMicrotask(() => toWorker.forEach((l) => l({ data: message } as MessageEvent))),
       addEventListener: (type: string, listener: (event: never) => void) => {
-        if (type === "message") toPage.push(listener as (event: MessageEvent<RpcResponse>) => void);
+        if (type === "message") toPage.push(listener as (event: MessageEvent<WorkerMessage>) => void);
       },
       terminate: () => {
         alive = false;
@@ -110,6 +112,6 @@ describe("WorkerEngine", () => {
     });
     listener!({ data: { id: 1, method: "constructor", args: [] } } as MessageEvent);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(replies).toEqual([{ id: 1, ok: false, error: "unknown engine method constructor" }]);
+    expect(replies).toEqual([{ ready: true }, { id: 1, ok: false, error: "unknown engine method constructor" }]);
   });
 });
