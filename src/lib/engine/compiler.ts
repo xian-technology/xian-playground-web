@@ -15,7 +15,7 @@ import type { ContractArtifact } from "./types";
 export { compilerErrorMessage, parseArtifact, parseDiagnostics, type Diagnostic } from "./compiler-output";
 
 export const VM_PROFILE = "xian_vm_v2";
-const OPTIONS = JSON.stringify({ lint: true, vm_profile: VM_PROFILE });
+const OPTIONS = JSON.stringify({ vm_profile: VM_PROFILE });
 
 export function diagnose(moduleName: string, source: string): Diagnostic[] {
   return parseDiagnostics(diagnoseContractJson(moduleName, source, OPTIONS));
