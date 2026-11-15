@@ -134,7 +134,10 @@ describe("VmEngine", () => {
     const failed = await engine.call({ signer: "a", contract: "con_a", function: "f", kwargs: "{}", environment: env, metering: metered });
     expect(failed).toMatchObject({ ok: false, rejected: false, error: "Insufficient balance.", result: null, chiUsed: 20 });
     const refused = await engine.call({ signer: "a", contract: "con_a", function: "f", kwargs: '{"x":"boom"}', environment: env, metering: metered });
-    expect(refused).toMatchObject({ ok: false, rejected: true, error: "kwargs refused: fractional number" });
+    expect(refused).toEqual({ ok: false, rejected: true, result: null, error: "kwargs refused: fractional number", chiUsed: 0, writes: [], events: [] });
+    chains[0]!.reply = '{"status":1,"result":"null","error":null,"chi_used":5,"writes":[],"events":[]}';
+    const silent = await engine.call({ signer: "a", contract: "con_a", function: "f", kwargs: "{}", environment: env, metering: metered });
+    expect(silent.error).toBe("The transaction failed.");
   });
 
   it("lets a VM crash (Rust panic) through instead of reporting it as a refusal", async () => {

@@ -1,4 +1,5 @@
 import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
@@ -13,7 +14,9 @@ const siblings = ["@xian-tech/compiler", "@xian-tech/vm"].map((name) =>
 export default defineConfig({
   server: { fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), ...siblings] } },
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    // From the working directory, not this file: mutation tools run the suite
+    // in a symlinked copy of the repo whose config resolves to the original.
+    alias: { "@": join(process.cwd(), "src") },
   },
   test: {
     include: ["tests/unit/**/*.test.ts", "tests/unit/**/*.test.tsx"],

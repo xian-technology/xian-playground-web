@@ -48,20 +48,22 @@ export function buildKwargs(method: ContractMethod, values: FieldValues): Kwargs
   const errors: Record<string, string> = {};
   for (const param of method.params) {
     const field = readField(param, values[param.name] ?? "");
+    if (field === null) continue;
     if ("error" in field) errors[param.name] = field.error;
-    else if ("node" in field) entries.push([param.name, field.node]);
+    else entries.push([param.name, field.node]);
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, kwargs: json.obj(entries) };
 }
 
-type FieldRead = { node: JsonNode } | { error: string } | { omitted: true };
+/** The field's wire value, why it is invalid, or null when it is left to its default. */
+type FieldRead = { node: JsonNode } | { error: string } | null;
 
 /**
  * An empty field means "use the default" for optional parameters; for a
  * required one it is an error, except text, where empty is the empty string.
  */
 function readField(param: MethodParam, raw: string): FieldRead {
-  if (raw === "" && !param.required) return { omitted: true };
+  if (raw === "" && !param.required) return null;
   if (raw === "" && param.type !== "str") return { error: "Enter a value." };
   try {
     return { node: parseField(param.type, raw) };

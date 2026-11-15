@@ -276,6 +276,57 @@ describe("PlaygroundController", () => {
     expect(controller.getState().engine).toBe("ready");
   });
 
+  it("saves the chain snapshot after every change to it", async () => {
+    const { controller, engine, store } = await setup();
+    const saved = async () => expect(store.saved?.snapshot).toBe(await engine.exportSnapshot());
+    await controller.deploy("{}");
+    await saved();
+    await controller.call("con_demo_token", "transfer", "{}");
+    await saved();
+    await controller.editState('{"con_demo_token": {"balances:bob": 1}}');
+    await saved();
+    controller.setEditor({ contractName: "con_other" });
+    await controller.deploy("{}");
+    await controller.removeContract("con_other");
+    await saved();
+    expect(controller.getState().contracts.map((c) => c.name)).toEqual(["con_demo_token"]);
+    expect(controller.getState().doc.contracts.map((c) => c.name)).toEqual(["con_demo_token"]);
+    expect(controller.getState().storageAvailable).toBe(true);
+    const exported = controller.exportDoc();
+    const changed = { ...exported, contracts: exported.contracts.map((c) => ({ ...c, state: [["balances:new", "9"]] as [string, string][] })) };
+    await controller.importDoc(changed, "file");
+    await saved();
+    await controller.resetWorkspace();
+    await saved();
+  });
+
+  it("keeps one entry per contract name when redeploying", async () => {
+    const { controller } = await setup();
+    await controller.deploy("{}");
+    await controller.deploy('{"n":1}');
+    expect(controller.getState().doc.contracts.map((c) => [c.name, c.constructorKwargs])).toEqual([["con_demo_token", '{"n":1}']]);
+  });
+
+  it("restores each imported contract's own state", async () => {
+    const { controller, engine } = await setup();
+    const doc: WorkspaceDoc = {
+      ...defaultWorkspace(),
+      contracts: [
+        { name: "con_a", source: "a", constructorKwargs: "{}", state: [["balances:x", "1"]] },
+        { name: "con_b", source: "b", constructorKwargs: "{}", state: [["balances:y", "2"]] },
+      ],
+    };
+    expect(await controller.importDoc(doc, "file")).toBe(true);
+    expect([...engine.store.keys()].filter((key) => !key.includes("__")).sort()).toEqual(["con_a.balances:x", "con_b.balances:y"]);
+  });
+
+  it("notices when the browser refuses to save", async () => {
+    const { controller, store } = await setup();
+    store.save = async () => false;
+    expect(await controller.saveNow()).toBe(false);
+    expect(controller.getState().storageAvailable).toBe(false);
+  });
+
   it("reports a start-up failure", async () => {
     const engine = new ToyEngine();
     engine.importSnapshot = async () => {

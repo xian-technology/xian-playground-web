@@ -98,7 +98,7 @@ describe("WorkerEngine", () => {
     await engine.deploy({} as never);
     expect(await engine.exportSnapshot()).toBe("deployed");
     const stopped = await engine.call(call("spin"));
-    expect(stopped).toMatchObject({ ok: false, rejected: true, error: expect.stringMatching(/Stopped after/) });
+    expect(stopped).toMatchObject({ ok: false, rejected: true, chiUsed: 0, error: expect.stringMatching(/^Stopped after 0.05 seconds/) });
     expect(terminated).toEqual([0]);
     expect(engines[1]!.imported).toEqual(["deployed"]);
     expect((await engine.call(call("f"))).ok).toBe(true);
@@ -115,6 +115,22 @@ describe("WorkerEngine", () => {
     expect(terminated).toEqual([0]);
     expect(engines[1]!.imported).toEqual(["deployed"]);
     expect((await engine.call(call("f"))).ok).toBe(true);
+  });
+
+  it("fails pending requests when the worker reports an error", async () => {
+    let fireError: ((event: ErrorEvent) => void) | undefined;
+    const engine = new WorkerEngine(() => ({
+      postMessage: () => {},
+      addEventListener: (type: string, listener: (event: never) => void) => {
+        if (type === "message") (listener as (event: MessageEvent) => void)({ data: { ready: true } } as MessageEvent);
+        if (type === "error") fireError = listener as (event: ErrorEvent) => void;
+      },
+      terminate: () => {},
+    }) as WorkerLike);
+    const pending = engine.state();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireError!({ message: "" } as ErrorEvent);
+    await expect(pending).rejects.toThrow("The engine worker crashed.");
   });
 
   it("refuses unknown methods on the worker side", async () => {

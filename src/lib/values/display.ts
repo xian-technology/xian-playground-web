@@ -54,8 +54,8 @@ export function describeNode(node: JsonNode): DisplayValue {
 }
 
 function describeObject(node: Extract<JsonNode, { t: "obj" }>): DisplayValue {
-  const [tag, payload] = node.entries[0] ?? [];
-  if (node.entries.length === 1 && tag !== undefined && payload !== undefined) {
+  if (node.entries.length === 1) {
+    const [tag, payload] = node.entries[0]!;
     const wrapped = describeWrapper(tag, payload);
     if (wrapped) return wrapped;
   }

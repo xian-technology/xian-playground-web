@@ -198,6 +198,7 @@ const SHORTCUTS: [string, string][] = [
   ["⌘/Ctrl + ↵", "Deploy (in the editor) or run (in the call form)"],
   ["⌘/Ctrl + S", "Save now (edits also save automatically)"],
   ["Esc", "Restore a maximized panel"],
+  ["Ctrl + M (Mac: Ctrl + ⇧ + M)", "In the editor: let Tab move focus instead of indenting"],
 ];
 
 function ShortcutsHelp() {

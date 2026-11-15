@@ -36,6 +36,13 @@ test("the main flow works with the keyboard only", async ({ page }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
+test("reflows at 320 CSS pixels (WCAG 1.4.10)", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await openPlayground(page);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
 test("works at phone width", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPlayground(page);
