@@ -1,182 +1,113 @@
 # xian-playground-web
 
-`xian-playground-web` is the interactive in-browser playground for the
-Xian contracting engine. Users author, lint, deploy, and call smart
-contracts in the browser while the backend executes persisted `xian_vm_v2`
-IR through `xian-vm-core` in a per-session sandbox. It is a developer test
-surface, not a live node.
+`xian-playground-web` is the in-browser playground for Xian smart contracts.
+Users write, lint, deploy and call contracts and inspect their state. Everything
+runs in the browser: the contract compiler and the node's own VM are compiled
+to WebAssembly, so the site is a set of static files and no contract code or
+state is sent anywhere. It is a developer test surface, not a live node.
 
-The app is built with [Reflex](https://reflex.dev/), so the backend is
-Python and the frontend is generated and served by Reflex itself. State
-(contract storage, metadata, UI snapshots) is filesystem-backed under
-`playground/.sessions/`.
+Built with Next.js (App Router, static export), TypeScript, Tailwind CSS,
+shadcn/ui and the Monaco editor.
 
-## Session Flow
-
-Session cookies contain a server-issued session ID plus a browser-bound owner
-secret. The visible session ID is not sufficient to adopt a session; sharing
-uses a one-time resume token that rotates the owner secret when consumed.
+## How It Works
 
 ```mermaid
 flowchart LR
-  Browser["Browser session"] --> Reflex["Reflex frontend and backend"]
-  Reflex --> Session["Per-session sandbox"]
-  Session --> Compiler["xian-contracting source compiler"]
-  Session --> VM["xian-vm-core execution"]
-  Session --> Storage["Filesystem-backed state"]
-  Reflex --> Linter["xian-linter"]
-  Compiler --> VM
-  VM --> Results["Deploy and call results"]
-  Results --> Browser
+  Editor["Monaco editor"] --> Compiler["@xian-tech/compiler (WASM)<br/>live diagnostics, signatures"]
+  UI["Playground UI<br/>PlaygroundController"] --> Worker["Web Worker"]
+  Worker --> VM["@xian-tech/vm (WASM)<br/>xian-vm-core, in-memory chain"]
+  UI --> IDB["IndexedDB<br/>workspace + chain snapshot"]
+  UI --> Share["Share link (#w=...)<br/>Export / Import JSON"]
 ```
+
+- **Compiler**: `@xian-tech/compiler` (`../xian-contracting/packages/xian-compiler-core/npm`)
+  gives live diagnostics in the editor and the compiled VM IR from which the
+  call and constructor forms are built.
+- **VM**: `@xian-tech/vm` (`../xian-contracting/packages/xian-vm-core/npm`) is
+  `xian-vm-core` with an in-memory store. Deploys go through the same
+  `submission.submit_contract` path as on chain (the VM compiles the source).
+  It runs in a Web Worker: a call that runs too long is stopped, and a VM crash
+  (a Rust panic aborts the WebAssembly instance) restarts the worker from the
+  last saved chain snapshot.
+- **Exact values**: every contract value crosses the engine boundary as V2 wire
+  JSON text. Decimals are `{"__fixed__": "1.5"}`, integers beyond 2^53 are
+  `{"__big_int__": "..."}`; nothing passes through a JavaScript `number`. Form
+  inputs are parsed with the VM's own rules (`canonical_decimal` is mirrored in
+  TypeScript and checked against the VM's export by a differential test).
+- **Workspaces**: one per browser, kept in IndexedDB (editor, environment,
+  activity log, chain snapshot). Without storage the app still works for the
+  current tab. Share links put the workspace in the URL fragment
+  (deflate-compressed, size-capped); shared and imported workspaces carry
+  contract source and public state only and are redeployed from source.
 
 ## Quick Start
 
-Install dependencies (sibling Xian repos must be present alongside this
-checkout):
+The sibling WebAssembly packages must be present and built:
 
-```bash
-uv sync
+```text
+xian/
+  xian-contracting/          # packages/xian-compiler-core/npm, packages/xian-vm-core/npm
+  xian-playground-web/
 ```
 
-The project resolves its Xian dependencies as editable sibling checkouts:
-
-- `../xian-contracting` → `xian-tech-contracting`
-- `../xian-contracting/packages/xian-vm-core` → `xian-tech-vm-core`
-- `../xian-linter`      → `xian-tech-linter`
-- `../xian-py`          → `xian-tech-py`
-
-### Local development
-
 ```bash
-uv run reflex run
+npm run build:wasm   # wasm-pack builds of the compiler and the VM (Rust + wasm32 target)
+npm ci
+npm run dev          # http://localhost:3000
 ```
 
-Vite dev server with hot reload + a single backend worker. Reflex prints
-the URL it binds to (typically `http://localhost:3000`).
-
-### Production (single-port — recommended)
+Production build and local preview of the static export:
 
 ```bash
-uv run reflex run --env prod --single-port \
-  --frontend-port 8001 --backend-port 8001
+npm run build        # writes out/
+npm run serve        # serves out/ on http://127.0.0.1:3210
 ```
-
-A single Granian process serves both the static bundle and websocket /
-events on port 8001.
-
-### Production (split-port)
-
-```bash
-uv run reflex run --env prod
-```
-
-Frontend Sirv server on port 3000, backend on 8000. Front it with the
-split-port nginx config below.
-
-## Principles
-
-- **Per-session Xian VM.** The backend compiles submitted source to
-  validator-style `xian_vm_v2` IR and executes deploy/call requests through
-  `xian-vm-core`, with isolated state on disk. There is no shared chain.
-- **Single-process session manager.** Session metadata locks live in
-  memory. Do not set `REFLEX_REDIS_URL` — multiple Reflex workers would
-  corrupt the per-session filesystem state.
-- **Submission rules match the chain.** User-submitted contracts follow
-  current `submission` contract rules: names start with `con_`, are
-  lowercase ASCII / digits / underscores, and ≤ 64 characters. The only
-  exception is the system-contract path when the sandbox signer is
-  explicitly `sys`.
-- **Python 3.14.** `pyproject.toml`, `xian-tech-contracting`,
-  `xian-tech-vm-core`, and `xian-tech-linter` pin the runtime.
-- **Resource caps are configurable.** Upload sizes, activity-log size,
-  session TTL, and worker RPC timeouts are tunable through environment
-  variables (see below).
-- **Worker shutdown is bounded.** An exited worker does not require a shutdown
-  reply. A worker that does not acknowledge shutdown is terminated and joined.
-
-## Configuration
-
-Environment variables:
-
-| Variable                                | Purpose                                                            | Default       |
-| --------------------------------------- | ------------------------------------------------------------------ | ------------- |
-| `PLAYGROUND_STATE_IMPORT_MAX_BYTES`     | Maximum size of an uploaded state snapshot                         | 10 MB         |
-| `PLAYGROUND_ACTIVITY_LOG_MAX_ENTRIES`   | Activity-log entries retained per session                          | 50            |
-| `PLAYGROUND_SESSION_LOCK_IDLE_SECONDS`  | Idle TTL for cached session metadata locks                         | 600 s         |
-| `PLAYGROUND_SESSION_LOCK_CACHE`         | Max session metadata locks held in memory (LRU eviction)           | 2048          |
-| `PLAYGROUND_SESSION_TTL_SECONDS`        | Idle TTL before a session is deleted; `0` keeps sessions forever   | 7 d           |
-| `PLAYGROUND_WORKER_RPC_TIMEOUT`         | Worker RPC timeout (seconds); `0` disables (not recommended)       | 30 s          |
-| `PLAYGROUND_DEPLOY_URL`                 | Public frontend URL for deployed Reflex builds                     | local default |
-| `PLAYGROUND_API_URL`                    | Public backend/event URL for deployed Reflex builds                | local default |
-| `PLAYGROUND_FRONTEND_PORT`              | Default Reflex frontend port                                      | 3000          |
-| `PLAYGROUND_BACKEND_PORT`               | Default Reflex backend port                                       | 8000          |
-
-`rxconfig.py` declares the Reflex runtime config. The stock file works
-for local dev; ports and env are overridden via CLI in production.
-
-## Key Directories
-
-- `playground/` — Reflex app:
-  - `playground.py` — Reflex app entry, route registration.
-  - `state.py` — UI / session state machine.
-  - `components/` — UI components (editor, panels, dialogs).
-  - `services/` — backend services (worker RPC, session manager,
-    submission flow).
-  - `middleware.py`, `defaults.py` — request middleware and defaults.
-- `tests/unit/` — fast unit suite.
-- `assets/` — static assets served by Reflex.
-- `uploaded_files/` — runtime upload area.
-- `pyproject.toml`, `uv.lock` — uv dependency configuration.
-- `rxconfig.py` — Reflex runtime configuration.
-
-## Reverse Proxy / Deployment Notes
-
-- **Single-port mode** — forward every path (including `/_event`) to the
-  chosen backend port and enable websocket headers.
-- **Split-port mode** — send `/` to port 3000; proxy `/_event` and
-  `/sessions` to port 8000 with `proxy_http_version 1.1`, `Upgrade`, and
-  `Connection "upgrade"`.
-- The CSP must include `'unsafe-eval'` in `script-src`. Reflex bundles
-  (Monaco, Radix) rely on `new Function`; blocking it breaks hydration.
-- All session state lives under `playground/.sessions/`. The runtime
-  user must read/write that directory.
-- Do **not** set `REFLEX_REDIS_URL` — Reflex would spawn multiple
-  workers and corrupt the per-session filesystem state.
-
-A complete example nginx config (single-port and split-port) and a
-systemd unit are kept in this repo's git history; copy from the prior
-README revisions when deploying.
 
 ## Validation
 
 ```bash
-uv sync
-uv run pytest tests/unit                                # fast unit tests
-uv run pytest tests/integration -k <pattern>            # integration paths
-uv run reflex run --env prod --frontend-only            # frontend-build smoke
+npm run lint
+npm run typecheck
+npm test                       # Vitest: unit, component and real-WASM tests
+npm run coverage               # the same with coverage (coverage/lcov.info)
+npm run build
+npx playwright install chromium
+npm run test:e2e               # Playwright against out/ on the real VM
 ```
 
-## Troubleshooting
+## Hosting
 
-- Missing env vars: `rxconfig.py` raises `RuntimeError` naming the
-  missing key. Double-check `.env`.
-- Frontend build errors: verify Node ≥ 18 or Bun ≥ 1.1 is on `PATH`,
-  then run `uv run reflex run --env prod --frontend-only` to see
-  raw logs in `.web/`.
-- Session cookie not set: confirm `PLAYGROUND_SESSION_COOKIE_SECURE=1`
-  when serving over HTTPS.
+`out/` is plain static files. The host should:
+
+- serve `.wasm` as `application/wasm` (streaming compilation needs it);
+- cache `/_next/static/*` (content-hashed) as `public, max-age=31536000, immutable`;
+- allow `'wasm-unsafe-eval'` in the Content-Security-Policy `script-src`, and
+  workers from `'self'`.
+
+`public/_headers` carries these rules for hosts that read it (Netlify,
+Cloudflare Pages). The app expects to be served from the site root.
+
+## Key Directories
+
+- `src/app/` — Next.js entry (`page.tsx` loads the client-only playground).
+- `src/components/playground/` — panels, forms, header, Monaco setup.
+- `src/components/ui/` — shadcn/ui components (owned, edit freely).
+- `src/lib/values/` — strict JSON parser, wire format, exact numbers, display.
+- `src/lib/contract/` — name rules, method signatures from IR, typed kwargs.
+- `src/lib/engine/` — engine interface, VM adapter, worker RPC, compiler wrapper.
+- `src/lib/playground/` — the controller (application state and actions),
+  state documents, selection.
+- `src/lib/workspace/` — workspace document, share links, persistence, log.
+- `tests/unit/` — Vitest; `tests/e2e/` — Playwright.
+- `scripts/serve-static.mjs` — static server for previews and e2e tests.
 
 ## Requirements
 
-- Python 3.14
-- uv
-- Node.js ≥ 18 or Bun ≥ 1.1 (Reflex builds the frontend)
-- A compiler toolchain for transitive native dependencies (`make`,
-  `gcc`, `pkg-config`)
+- Node.js 24 or newer (Vitest imports the WebAssembly packages natively)
+- For `build:wasm`: Rust with the `wasm32-unknown-unknown` target and `wasm-pack`
 
 ## Related Docs
 
-- [`../xian-contracting/README.md`](../xian-contracting/README.md) — compiler and VM packages used per session
-- [`../xian-linter/README.md`](../xian-linter/README.md) — contract linter
-- [`../xian-py/README.md`](../xian-py/README.md) — Python SDK
+- [`../xian-contracting/README.md`](../xian-contracting/README.md) — compiler and VM
+- [`../xian-ide-web/README.md`](../xian-ide-web/README.md) — the IDE, which uses the same compiler package
+- [`../xian-docs-web/tools/playground.md`](../xian-docs-web/tools/playground.md) — the published playground docs

@@ -5,7 +5,9 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "build:compiler": "PATH=/opt/homebrew/opt/rustup/bin:$PATH npm --prefix ../xian-contracting/packages/xian-compiler-core/npm run build",
+    "build:wasm": "npm run build:wasm:compiler && npm run build:wasm:vm",
+    "build:wasm:compiler": "npm --prefix ../xian-contracting/packages/xian-compiler-core/npm run build",
+    "build:wasm:vm": "npm --prefix ../xian-contracting/packages/xian-vm-core/npm run build",
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "serve": "node scripts/serve-static.mjs out",
@@ -54,5 +56,8 @@
   },
   "overrides": {
     "dompurify": "^3.4.18"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

@@ -1,32 +1,22 @@
-assets/external/
-__pycache__/
-.states
-.web
-*.db
-*.py[cod]
-.idea
-.claude
-.env
-docs/
-CLAUDE.md
-PROGRESS.md
-no-gambiarra-policy.txt
-playground/.contract_state/
-playground/.sessions/
-.DS_Store
-graphify-out/
-
-# Next.js app
+# Dependencies and build output
 /node_modules
 /.next/
 /out/
-/coverage/
-/test-results/
-/playwright-report/
-/reports/
-/.stryker-tmp/
 *.tsbuildinfo
 next-env.d.ts
 npm-debug.log*
+
+# Test and quality-tool output
+/coverage/
+/test-results/
+/playwright-report/
 /.metrics/
 /target/
+
+# Local files
+.env*
+.DS_Store
+.idea
+.claude
+CLAUDE.md
+graphify-out/

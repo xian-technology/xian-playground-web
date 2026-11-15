@@ -11,8 +11,11 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xian-playground-web
     steps:
-      - name: Checkout xian-playground-web
+      - name: Checkout repository
         uses: actions/checkout@v7
         with:
           path: xian-playground-web
@@ -24,41 +27,56 @@ jobs:
           ref: main
           path: xian-contracting
 
-      - name: Checkout xian-linter
-        uses: actions/checkout@v7
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          repository: ${{ github.repository_owner }}/xian-linter
-          ref: main
-          path: xian-linter
+          targets: wasm32-unknown-unknown
 
-      - name: Checkout xian-py
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ github.repository_owner }}/xian-py
-          ref: main
-          path: xian-py
-
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
+      - name: Install wasm-pack
+        run: |
+          if ! command -v wasm-pack >/dev/null 2>&1; then
+            cargo install wasm-pack --version 0.14.0 --locked
+          fi
+          wasm-pack --version
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: xian-playground-web/package-lock.json
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+      - name: Build the compiler and VM WebAssembly packages
+        run: npm run build:wasm
 
       - name: Install dependencies
-        working-directory: xian-playground-web
-        run: uv sync --group dev
+        run: npm ci
 
-      - name: Run tests
-        working-directory: xian-playground-web
-        run: uv run pytest -q
+      - name: Audit production dependencies
+        run: npm audit --audit-level=critical --omit=dev
 
-      - name: Export Reflex app
-        working-directory: xian-playground-web
-        run: uv run reflex export --frontend-only
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build static export
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: xian-playground-web/test-results
+          retention-days: 7
