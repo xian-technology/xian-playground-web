@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
@@ -41,4 +43,14 @@ test("works at phone width", async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(0);
   await deploy(page);
   await expectDeployed(page, "con_demo_token");
+});
+
+test("serves the WebAssembly with the right type and long-lived caching", async ({ request }) => {
+  const files = await readdir("out/_next/static/wasm");
+  expect(files.filter((name) => name.endsWith(".wasm")).length).toBe(2);
+  for (const name of files) {
+    const response = await request.get(`/_next/static/wasm/${name}`);
+    expect(response.headers()["content-type"]).toBe("application/wasm");
+    expect(response.headers()["cache-control"]).toContain("immutable");
+  }
 });

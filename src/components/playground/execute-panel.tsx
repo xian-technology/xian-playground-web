@@ -23,6 +23,7 @@ export function ExecutePanel() {
   const contracts = usePlayground((state) => state.contracts);
   const ui = usePlayground((state) => state.ui);
   const busy = usePlayground((state) => state.busy);
+  const engineReady = usePlayground((state) => state.engine === "ready");
   const lastRun = usePlayground((state) => state.lastRun);
   const signer = usePlayground((state) => state.doc.environment.signer);
   const metered = usePlayground((state) => state.doc.metering.enabled);
@@ -144,9 +145,9 @@ export function ExecutePanel() {
           <a href="#environment" className="rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
             as <Badge variant="outline" className="font-mono">{signer}</Badge> {metered ? "· metered" : "· unmetered"}
           </a>
-          <Button size="sm" onClick={run} disabled={!method || busy !== null} aria-keyshortcuts="Control+Enter Meta+Enter">
-            {busy === "call" ? <Loader2 className="animate-spin" /> : <Play />}
-            {busy === "call" ? "Running…" : "Run"}
+          <Button size="sm" onClick={run} disabled={!method || busy !== null || !engineReady} aria-keyshortcuts="Control+Enter Meta+Enter">
+            {busy === "call" || !engineReady ? <Loader2 className="animate-spin" /> : <Play />}
+            {!engineReady ? "Starting VM…" : busy === "call" ? "Running…" : "Run"}
             <Kbd aria-hidden className="ml-1 hidden bg-primary-foreground/15 text-primary-foreground sm:inline-flex">⌘↵</Kbd>
           </Button>
         </div>

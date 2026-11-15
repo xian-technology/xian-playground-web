@@ -78,3 +78,21 @@ test("stops a runaway loop cleanly when metered", async ({ page }) => {
   const result = await run(page, {});
   await expect(result.getByText("Failed")).toBeVisible();
 });
+
+test("stops an unmetered runaway loop and keeps the chain", async ({ page }) => {
+  test.setTimeout(90_000);
+  await openPlayground(page);
+  await replaceCode(page, `${DEFAULT_CONTRACT}\n\n@export\ndef spin():\n    i = 0\n    while True:\n        i += 1\n`);
+  await deploy(page);
+  await expectDeployed(page, "con_demo_token");
+  const section = page.locator("#environment");
+  await section.getByRole("button", { name: /Execution environment/ }).click();
+  await section.getByRole("switch", { name: "Count chi like the chain" }).click();
+  await expect(section.getByText(/unmetered/)).toBeVisible();
+  await chooseFunction(page, "spin");
+  const result = await run(page, {});
+  await expect(result.getByTestId("run-error")).toContainText("Stopped after 10 seconds", { timeout: 30_000 });
+  await chooseFunction(page, "balance_of");
+  const balance = await run(page, { account: "treasury" });
+  await expect(balance.getByTestId("return-value")).toContainText("1000");
+});

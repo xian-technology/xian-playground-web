@@ -33,6 +33,9 @@ interface Pending {
 
 export class EngineTimeoutError extends Error {}
 
+/** The VM inside the worker panicked; its WebAssembly instance cannot be used again. */
+export class VmCrashError extends Error {}
+
 export class WorkerEngine implements PlaygroundEngine {
   private worker!: WorkerLike;
   private ready!: Promise<void>;
@@ -103,7 +106,7 @@ export class WorkerEngine implements PlaygroundEngine {
     if (!pending) return;
     this.pending.delete(response.id);
     if (response.ok) pending.resolve(response.value);
-    else pending.reject(new Error(response.error));
+    else pending.reject(response.fatal ? new VmCrashError(response.error) : new Error(response.error));
   }
 
   private failAll(error: Error): void {
@@ -111,7 +114,18 @@ export class WorkerEngine implements PlaygroundEngine {
     this.pending.clear();
   }
 
-  private send(method: RpcRequest["method"], args: unknown[]): Promise<unknown> {
+  /** Send a request; after a VM crash, restart from the checkpoint and report it. */
+  private async send(method: RpcRequest["method"], args: unknown[]): Promise<unknown> {
+    try {
+      return await this.post(method, args);
+    } catch (error) {
+      if (!(error instanceof VmCrashError)) throw error;
+      await this.restart();
+      throw new VmCrashError(crashMessage(error.message));
+    }
+  }
+
+  private post(method: RpcRequest["method"], args: unknown[]): Promise<unknown> {
     const id = this.nextId++;
     const worker = this.worker;
     return new Promise((resolve, reject) => {
@@ -128,9 +142,12 @@ export class WorkerEngine implements PlaygroundEngine {
     try {
       return (await Promise.race([this.send(method, [request]), timeout])) as ExecutionOutcome;
     } catch (error) {
+      if (error instanceof VmCrashError) return failedOutcome(error.message);
       if (!(error instanceof EngineTimeoutError)) throw error;
       await this.restart();
-      return stoppedOutcome(this.timeoutMs);
+      return failedOutcome(
+        `Stopped after ${this.timeoutMs / 1000} seconds without finishing. Turn on metering so the VM stops runaway code on its own.`,
+      );
     } finally {
       clearTimeout(timer);
     }
@@ -141,16 +158,20 @@ export class WorkerEngine implements PlaygroundEngine {
     this.worker.terminate();
     this.failAll(new Error("The engine was restarted."));
     this.start();
-    if (this.checkpoint !== null) await this.send("importSnapshot", [this.checkpoint]);
+    if (this.checkpoint !== null) await this.post("importSnapshot", [this.checkpoint]);
   }
 }
 
-function stoppedOutcome(timeoutMs: number): ExecutionOutcome {
+function crashMessage(detail: string): string {
+  return `The VM crashed (${detail}). It was restarted from the last saved state; changes from this action were not kept.`;
+}
+
+function failedOutcome(error: string): ExecutionOutcome {
   return {
     ok: false,
     rejected: true,
     result: null,
-    error: `Stopped after ${timeoutMs / 1000} seconds without finishing. Turn on metering to stop long-running code cleanly.`,
+    error,
     chiUsed: 0,
     writes: [],
     events: [],

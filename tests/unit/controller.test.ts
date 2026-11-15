@@ -126,7 +126,7 @@ describe("PlaygroundController", () => {
     engine.failDeployOf = "con_demo_token";
     const outcome = await controller.deploy("{}");
     expect(outcome?.ok).toBe(false);
-    expect(controller.getState().lastRun?.outcome.error).toBe("syntax error");
+    expect(controller.getState().lastRun).toMatchObject({ kind: "deploy", metered: true, outcome: { error: "syntax error" } });
     expect(controller.getState().log[0]?.level).toBe("error");
     expect(notes.at(-1)).toEqual(["error", "Deploy failed: syntax error"]);
   });
@@ -145,9 +145,11 @@ describe("PlaygroundController", () => {
   it("reports a failed call", async () => {
     const { controller, notes } = await setup();
     await controller.deploy("{}");
+    const before = notes.length;
     await controller.call("con_demo_token", "fail", "{}");
-    expect(controller.getState().lastRun?.outcome).toMatchObject({ ok: false, error: "Insufficient balance." });
-    expect(notes.at(-1)).toEqual(["error", "Insufficient balance."]);
+    expect(controller.getState().lastRun).toMatchObject({ metered: true, outcome: { ok: false, error: "Insufficient balance." } });
+    // The result panel shows the failure; no extra toast.
+    expect(notes.length).toBe(before);
   });
 
   it("validates environment changes before applying them", async () => {
@@ -236,6 +238,42 @@ describe("PlaygroundController", () => {
     const [a, b] = await Promise.all([controller.deploy("{}"), controller.deploy("{}")]);
     expect([a?.ok, b]).toEqual([true, undefined]);
     expect(engine.deploys).toHaveLength(1);
+  });
+
+  it("reports an engine failure during an action and stays usable", async () => {
+    const { controller, engine, notes } = await setup();
+    engine.deploy = async () => {
+      throw new Error("The VM crashed (unreachable). It was restarted from the last saved state.");
+    };
+    expect(await controller.deploy("{}")).toBeUndefined();
+    expect(notes.at(-1)).toEqual(["error", "The VM crashed (unreachable). It was restarted from the last saved state."]);
+    expect(controller.getState().busy).toBeNull();
+    expect(controller.getState().log[0]).toMatchObject({ level: "error", action: "deploy" });
+  });
+
+  it("shows the saved workspace before the VM has started", async () => {
+    const first = await setup();
+    first.controller.setCode("x = 1");
+    await first.controller.saveNow();
+    const engine = new ToyEngine();
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => (release = resolve));
+    const original = engine.contracts.bind(engine);
+    engine.contracts = async () => {
+      await started;
+      return original();
+    };
+    const controller = new PlaygroundController({ engine, store: first.store, notify: () => {} });
+    const phases: string[] = [];
+    controller.subscribe(() => phases.push(`${controller.getState().phase}/${controller.getState().engine}`));
+    const done = controller.init();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(controller.getState()).toMatchObject({ phase: "ready", engine: "starting" });
+    expect(controller.getState().doc.editor.code).toBe("x = 1");
+    expect(await controller.deploy("{}")).toBeUndefined();
+    release();
+    await done;
+    expect(controller.getState().engine).toBe("ready");
   });
 
   it("reports a start-up failure", async () => {

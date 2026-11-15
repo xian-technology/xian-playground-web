@@ -1,0 +1,11 @@
+# Response headers for static hosts that read this file (Netlify,
+# Cloudflare Pages). Other hosts: see README "Hosting".
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.wasm
+  Content-Type: application/wasm
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer

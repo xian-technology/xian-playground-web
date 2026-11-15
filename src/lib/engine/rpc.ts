@@ -27,7 +27,7 @@ export interface RpcRequest {
 
 export type RpcResponse =
   | { id: number; ok: true; value: unknown }
-  | { id: number; ok: false; error: string };
+  | { id: number; ok: false; error: string; fatal?: boolean };
 
 /**
  * Sent once the worker listens. A module worker that awaits its
@@ -63,6 +63,8 @@ async function respond(engine: PlaygroundEngine, request: RpcRequest): Promise<R
     const method = engine[request.method] as (...args: unknown[]) => Promise<unknown>;
     return { id: request.id, ok: true, value: await method.apply(engine, request.args) };
   } catch (error) {
-    return { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };
+    // A Rust panic aborts the WebAssembly instance: nothing in this worker can run again.
+    const fatal = error instanceof WebAssembly.RuntimeError;
+    return { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error), ...(fatal && { fatal }) };
   }
 }

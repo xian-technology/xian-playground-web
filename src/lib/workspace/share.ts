@@ -14,6 +14,8 @@ export const MAX_SHARE_JSON_BYTES = 2 * 1024 * 1024;
 
 export class ShareLinkError extends Error {}
 
+const DAMAGED = "This share link is damaged or incomplete. Check that you copied all of it, or ask for a new one.";
+
 export async function encodeShareFragment(doc: WorkspaceDoc): Promise<string> {
   const bytes = await pipe(new TextEncoder().encode(JSON.stringify(doc)), new CompressionStream("deflate-raw"));
   const fragment = SHARE_PREFIX + toBase64Url(bytes);
@@ -34,13 +36,13 @@ export async function decodeShareFragment(hash: string): Promise<WorkspaceDoc | 
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch (error) {
     if (error instanceof ShareLinkError) throw error;
-    throw new ShareLinkError("This share link is damaged or incomplete.");
+    throw new ShareLinkError(DAMAGED);
   }
   let data: unknown;
   try {
     data = JSON.parse(text);
   } catch {
-    throw new ShareLinkError("This share link is damaged or incomplete.");
+    throw new ShareLinkError(DAMAGED);
   }
   return parseWorkspaceDoc(data);
 }
@@ -82,7 +84,7 @@ function toBase64Url(bytes: Uint8Array): string {
 }
 
 function fromBase64Url(text: string): Uint8Array {
-  if (!/^[A-Za-z0-9_-]*$/.test(text)) throw new ShareLinkError("This share link is damaged or incomplete.");
+  if (!/^[A-Za-z0-9_-]*$/.test(text)) throw new ShareLinkError(DAMAGED);
   const binary = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }

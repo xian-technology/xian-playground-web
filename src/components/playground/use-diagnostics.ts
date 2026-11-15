@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 
 import { extractMethods, type ContractMethod } from "@/lib/contract/methods";
-import { compile, compilerErrorMessage, diagnose, type Diagnostic } from "@/lib/engine/compiler";
+import type { Diagnostic } from "@/lib/engine/compiler";
+
+type Compiler = typeof import("@/lib/engine/compiler");
+/** The compiler WebAssembly loads after first paint, once. */
+let compilerModule: Promise<Compiler> | null = null;
+const loadCompiler = () => (compilerModule ??= import("@/lib/engine/compiler"));
 
 export interface CodeInsight {
   diagnostics: Diagnostic[];
@@ -20,7 +25,10 @@ export function useDiagnostics(contractName: string, code: string, revision: num
 
   useEffect(() => {
     const moduleName = /^[a-z][a-z0-9_]{0,63}$/.test(contractName) ? contractName : "con_playground";
-    const timer = setTimeout(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const { compile, compilerErrorMessage, diagnose } = await loadCompiler();
+      if (cancelled) return;
       let diagnostics: Diagnostic[];
       try {
         diagnostics = diagnose(moduleName, code);
@@ -37,7 +45,10 @@ export function useDiagnostics(contractName: string, code: string, revision: num
       }
       setInsight({ diagnostics, constructor, checking: false });
     }, DELAY_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [contractName, code, revision]);
 
   return insight;

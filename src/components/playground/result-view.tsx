@@ -1,6 +1,7 @@
 "use client";
 
 import { Ban, CircleAlert, CircleCheck, Terminal } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import type { RunRecord } from "@/lib/playground/controller";
@@ -19,10 +20,19 @@ export function ResultView({ run }: { run: RunRecord | null }) {
       </div>
     );
   }
+  return <RunDetails run={run} />;
+}
+
+function RunDetails({ run }: { run: RunRecord }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Bring each new result into view; the arguments above can push it below the fold.
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [run]);
   const { outcome } = run;
   const target = run.kind === "deploy" ? `deploy ${run.contract}` : `${run.contract}.${run.function}()`;
   return (
-    <div className="grid gap-3" aria-live="polite" data-testid="run-result">
+    <div ref={ref} className="grid scroll-mb-3 gap-3" aria-live="polite" data-testid="run-result">
       <div className="flex flex-wrap items-center gap-2">
         {outcome.ok ? (
           <Badge variant="success">
@@ -39,7 +49,7 @@ export function ResultView({ run }: { run: RunRecord | null }) {
         )}
         <code className="min-w-0 truncate font-mono text-xs">{target}</code>
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-          {outcome.chiUsed > 0 ? `${outcome.chiUsed.toLocaleString("en-US")} chi` : "not metered"}
+          {run.metered ? `${outcome.chiUsed.toLocaleString("en-US")} chi used` : "not metered"}
         </span>
       </div>
 

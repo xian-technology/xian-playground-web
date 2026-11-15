@@ -6,6 +6,8 @@
  * leaves untouched.
  */
 
+import type { ContractInfo, TxOutcome } from "@xian-tech/vm/types";
+
 import { parseField } from "@/lib/contract/kwargs";
 import { json, parseJson, stringifyJson, type JsonNode } from "@/lib/values/json";
 import { isSafeInteger, parseInteger } from "@/lib/values/numbers";
@@ -39,15 +41,6 @@ export interface VmChainLike {
 export interface VmModuleLike {
   createChain(): VmChainLike;
   importChain(snapshot: string): VmChainLike;
-}
-
-interface TxOutcome {
-  status: number;
-  result: string;
-  error: string | null;
-  chi_used: number;
-  writes: [string, string | null][];
-  events: { contract: string; event: string; signer: string; caller: string; data_indexed: string; data: string }[];
 }
 
 export class VmEngine implements PlaygroundEngine {
@@ -84,8 +77,8 @@ export class VmEngine implements PlaygroundEngine {
     return names.flatMap((name) => {
       const raw = this.chain.contract(name);
       if (raw === undefined) return [];
-      const info = JSON.parse(raw) as { source: string; vm_ir_json: string };
-      return [{ name, source: info.source, vmIrJson: info.vm_ir_json }];
+      const info = JSON.parse(raw) as ContractInfo;
+      return [{ name, source: info.source ?? "", vmIrJson: info.vm_ir_json }];
     });
   }
 
@@ -120,13 +113,16 @@ export class VmEngine implements PlaygroundEngine {
 
   /**
    * A request the VM refuses (or one that cannot be built, e.g. a bad chi
-   * budget) throws; the UI shows it like a failed transaction.
+   * budget) throws; the UI shows it like a failed transaction. A Rust panic
+   * (`WebAssembly.RuntimeError`) is different: the instance is dead, so it
+   * propagates and the worker host restarts the VM.
    */
   private run(send: () => string): ExecutionOutcome {
     let outcome: TxOutcome;
     try {
       outcome = JSON.parse(send()) as TxOutcome;
     } catch (error) {
+      if (error instanceof WebAssembly.RuntimeError) throw error;
       return {
         ok: false,
         rejected: true,

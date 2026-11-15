@@ -34,13 +34,18 @@ export interface RunRecord {
   /** Wire JSON text of the kwargs (or constructor args) that were sent. */
   kwargs: string;
   outcome: ExecutionOutcome;
+  /** Whether chi was metered for this run (chi used 0 then means 0, not "unknown"). */
+  metered: boolean;
   at: string;
 }
 
 export type Busy = "deploy" | "call" | "state" | "workspace" | null;
 
 export interface PlaygroundState {
+  /** "ready" once the saved workspace is on screen; the VM may still be starting. */
   phase: "loading" | "ready" | "failed";
+  /** The WebAssembly VM: deploys and calls wait for "ready". */
+  engine: "starting" | "ready";
   loadError: string | null;
   doc: WorkspaceDoc;
   ui: UiPrefs;
@@ -65,6 +70,7 @@ const EDITOR_SAVE_DELAY_MS = 400;
 export class PlaygroundController {
   private current: PlaygroundState = {
     phase: "loading",
+    engine: "starting",
     loadError: null,
     doc: defaultWorkspace(),
     ui: defaultUiPrefs(),
@@ -101,21 +107,23 @@ export class PlaygroundController {
     return this.current.doc.contracts.map(({ name, source, constructorKwargs }) => ({ name, source, constructorKwargs }));
   }
 
-  /** Load the saved workspace (or start fresh) and bring the engine to it. */
+  /**
+   * Show the saved workspace (or the default one) right away, then bring the
+   * VM to it; the VM's WebAssembly is the slow part of starting.
+   */
   async init(): Promise<void> {
     try {
       const saved = await this.deps.store.load();
-      if (saved) {
-        this.set({ doc: saved.doc, ui: saved.ui, log: saved.log });
-        if (saved.snapshot !== null) {
-          await this.deps.engine.importSnapshot(saved.snapshot);
-          this.snapshot = saved.snapshot;
-        } else {
-          await this.restoreContracts(saved.doc);
-        }
+      if (saved) this.set({ doc: saved.doc, ui: saved.ui, log: saved.log });
+      this.set({ phase: "ready", storageAvailable: this.deps.store.available() });
+      if (saved?.snapshot != null) {
+        await this.deps.engine.importSnapshot(saved.snapshot);
+        this.snapshot = saved.snapshot;
+      } else if (saved) {
+        await this.restoreContracts(saved.doc);
       }
       await this.refresh();
-      this.set({ phase: "ready", storageAvailable: this.deps.store.available() });
+      this.set({ engine: "ready" });
     } catch (error) {
       this.set({ phase: "failed", loadError: message(error) });
     }
@@ -128,7 +136,7 @@ export class PlaygroundController {
     this.snapshot = null;
     this.set({ doc: defaultWorkspace(), ui: defaultUiPrefs(), log: [], lastRun: null, loadError: null });
     await this.refresh();
-    this.set({ phase: "ready" });
+    this.set({ phase: "ready", engine: "ready" });
   }
 
   private async refresh(): Promise<void> {
@@ -146,11 +154,20 @@ export class PlaygroundController {
     if (!saved && this.current.storageAvailable) this.set({ storageAvailable: false });
   }
 
+  /**
+   * Run one user action at a time. An engine failure (a crashed VM is
+   * restarted by the engine) is reported instead of escaping to the UI.
+   */
   private async exclusive<T>(busy: Exclude<Busy, null>, work: () => Promise<T>): Promise<T | undefined> {
-    if (this.current.busy) return undefined;
+    if (this.current.busy || this.current.engine !== "ready") return undefined;
     this.set({ busy });
     try {
       return await work();
+    } catch (error) {
+      this.log({ level: "error", action: busy, message: message(error) });
+      this.deps.notify("error", message(error));
+      await this.refresh().catch(() => undefined);
+      return undefined;
     } finally {
       this.set({ busy: null });
     }
@@ -206,7 +223,7 @@ export class PlaygroundController {
         environment,
         metering,
       });
-      this.set({ lastRun: { kind: "deploy", contract: name, function: "", kwargs: constructorKwargs, outcome, at: new Date().toISOString() } });
+      this.set({ lastRun: { kind: "deploy", contract: name, function: "", kwargs: constructorKwargs, outcome, metered: metering.enabled, at: new Date().toISOString() } });
       if (outcome.ok) {
         const contracts = [
           ...this.current.doc.contracts.filter((contract) => contract.name !== name),
@@ -232,13 +249,12 @@ export class PlaygroundController {
     return this.exclusive("call", async () => {
       const { environment, metering } = this.current.doc;
       const outcome = await this.deps.engine.call({ signer: environment.signer, contract, function: fn, kwargs, environment, metering });
-      this.set({ lastRun: { kind: "call", contract, function: fn, kwargs, outcome, at: new Date().toISOString() } });
+      this.set({ lastRun: { kind: "call", contract, function: fn, kwargs, outcome, metered: metering.enabled, at: new Date().toISOString() } });
       const detail = `Kwargs: ${kwargs}\n${outcome.ok ? `Result: ${outcome.result ?? "null"}` : `Error: ${outcome.error ?? ""}`}\n${chiDetail(outcome)}`;
       if (outcome.ok) {
         this.log({ level: "success", action: "execute", message: `Ran ${contract}.${fn}.`, detail });
       } else {
         this.log({ level: "error", action: "execute", message: `${contract}.${fn} failed: ${outcome.error ?? ""}`, detail });
-        this.deps.notify("error", outcome.error ?? "The call failed.");
       }
       await this.refresh();
       await this.persist(true);

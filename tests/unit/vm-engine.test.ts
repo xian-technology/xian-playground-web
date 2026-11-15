@@ -20,6 +20,7 @@ class FakeChain implements VmChainLike {
   call(request: string) {
     this.sent.push(request);
     if (request.includes('"boom"')) throw new Error("kwargs refused: fractional number");
+    if (request.includes('"panic"')) throw new WebAssembly.RuntimeError("unreachable");
     return this.reply;
   }
   items() {
@@ -36,6 +37,7 @@ class FakeChain implements VmChainLike {
     return '["con_a","submission"]';
   }
   contract(name: string) {
+    if (name === "submission") return '{"name":"submission","source":null,"vm_ir_json":"{}"}';
     return name === "con_a" ? '{"name":"con_a","source":"x = 1","vm_ir_json":"{}"}' : undefined;
   }
   free() {
@@ -135,6 +137,13 @@ describe("VmEngine", () => {
     expect(refused).toMatchObject({ ok: false, rejected: true, error: "kwargs refused: fractional number" });
   });
 
+  it("lets a VM crash (Rust panic) through instead of reporting it as a refusal", async () => {
+    const { engine } = setup();
+    await expect(
+      engine.call({ signer: "a", contract: "con_a", function: "f", kwargs: '{"x":"panic"}', environment: env, metering: metered }),
+    ).rejects.toBeInstanceOf(WebAssembly.RuntimeError);
+  });
+
   it("reports an invalid chi budget as a refused request", async () => {
     const { engine } = setup();
     const outcome = await engine.call({ signer: "a", contract: "con_a", function: "f", kwargs: "{}", environment: env, metering: { enabled: true, chiLimit: "0" } });
@@ -143,7 +152,10 @@ describe("VmEngine", () => {
 
   it("reads contracts and state, writes and deletes keys", async () => {
     const { engine } = setup();
-    expect(await engine.contracts()).toEqual([{ name: "con_a", source: "x = 1", vmIrJson: "{}" }]);
+    expect(await engine.contracts()).toEqual([
+      { name: "con_a", source: "x = 1", vmIrJson: "{}" },
+      { name: "submission", source: "", vmIrJson: "{}" },
+    ]);
     await engine.writeState([{ key: "con_a.v", value: "1" }, { key: "con_a.w", value: '"x"' }]);
     await engine.writeState([{ key: "con_a.w", value: null }]);
     expect(await engine.state()).toEqual([{ key: "con_a.v", value: "1" }]);

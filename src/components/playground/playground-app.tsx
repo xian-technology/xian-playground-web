@@ -105,6 +105,7 @@ function Shell({ onOpenDoc }: { onOpenDoc(doc: WorkspaceDoc, origin: "file"): vo
       <div className="flex min-h-dvh flex-col">
         <div inert={maximized !== null}>
           <AppHeader onOpenDoc={onOpenDoc} />
+          <EngineNotice />
           <StorageNotice />
         </div>
         <main className="mx-auto grid w-full max-w-[1600px] flex-1 grid-cols-[minmax(0,1fr)] content-start gap-4 px-4 py-4">
@@ -158,7 +159,7 @@ function Workbench() {
   return (
     <div className="h-[calc(100dvh-5.5rem)] min-h-[40rem]">
       <ResizablePanelGroup orientation="vertical" id="playground-rows">
-        <ResizablePanel defaultSize="55%" minSize="25%">
+        <ResizablePanel defaultSize="52%" minSize="25%">
           <ResizablePanelGroup orientation="horizontal" id="playground-top">
             <ResizablePanel defaultSize="55%" minSize="30%" className="pr-2 pb-2">
               <EditorPanel />
@@ -170,7 +171,7 @@ function Workbench() {
           </ResizablePanelGroup>
         </ResizablePanel>
         <ResizableHandle withHandle aria-label="Resize top and bottom rows" />
-        <ResizablePanel defaultSize="45%" minSize="25%">
+        <ResizablePanel defaultSize="48%" minSize="25%">
           <ResizablePanelGroup orientation="horizontal" id="playground-bottom">
             <ResizablePanel defaultSize="55%" minSize="30%" className="pt-2 pr-2">
               <ExecutePanel />
@@ -200,8 +201,19 @@ function LoadingScreen() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center" role="status">
       <Loader2 className="size-6 animate-spin text-primary" aria-hidden />
-      <p className="text-sm font-medium">Starting the compiler and VM…</p>
-      <p className="max-w-sm text-xs text-muted-foreground">Everything runs in your browser as WebAssembly. Your last workspace is restored automatically.</p>
+      <p className="text-sm font-medium">Opening your workspace…</p>
+    </div>
+  );
+}
+
+/** Shown while the VM's WebAssembly (about 1.8 MB compressed) downloads and starts. */
+function EngineNotice() {
+  const starting = usePlayground((state) => state.engine === "starting");
+  if (!starting) return null;
+  return (
+    <div role="status" className="flex items-center justify-center gap-2 border-b bg-info-muted px-4 py-1.5 text-xs text-info-foreground">
+      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+      Starting the Xian VM in your browser. You can edit while it loads.
     </div>
   );
 }

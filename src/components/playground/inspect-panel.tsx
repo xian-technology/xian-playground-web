@@ -78,7 +78,7 @@ export function InspectPanel() {
           title="No contracts to inspect"
           description={
             selection.hiddenSystemCount > 0
-              ? "Deploy a contract to see it here, or show system contracts to look at the built-in ones."
+              ? "Deploy a contract to read its source and VM IR here, or show system contracts to see the built-in ones."
               : "Deploy a contract to see its source and VM IR here."
           }
         />

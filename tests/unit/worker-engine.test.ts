@@ -15,6 +15,7 @@ class MemoryEngine implements PlaygroundEngine {
   async call(request: CallRequest): Promise<ExecutionOutcome> {
     if (request.function === "spin") return new Promise(() => {});
     if (request.function === "crash") throw new Error("engine bug");
+    if (request.function === "panic") throw new WebAssembly.RuntimeError("unreachable");
     return outcome();
   }
   async contracts() {
@@ -98,6 +99,19 @@ describe("WorkerEngine", () => {
     expect(await engine.exportSnapshot()).toBe("deployed");
     const stopped = await engine.call(call("spin"));
     expect(stopped).toMatchObject({ ok: false, rejected: true, error: expect.stringMatching(/Stopped after/) });
+    expect(terminated).toEqual([0]);
+    expect(engines[1]!.imported).toEqual(["deployed"]);
+    expect((await engine.call(call("f"))).ok).toBe(true);
+  });
+
+  it("restarts the worker from the last snapshot when the VM crashes", async () => {
+    const engines: MemoryEngine[] = [];
+    const terminated: number[] = [];
+    const engine = new WorkerEngine(spawnFake(engines, terminated));
+    await engine.deploy({} as never);
+    await engine.exportSnapshot();
+    const crashed = await engine.call(call("panic"));
+    expect(crashed).toMatchObject({ ok: false, rejected: true, error: expect.stringMatching(/VM crashed/) });
     expect(terminated).toEqual([0]);
     expect(engines[1]!.imported).toEqual(["deployed"]);
     expect((await engine.call(call("f"))).ok).toBe(true);

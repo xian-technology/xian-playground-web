@@ -32,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full bg-background text-foreground">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
-          <Toaster richColors closeButton position="bottom-right" />
+          <Toaster closeButton position="bottom-right" />
         </ThemeProvider>
       </body>
     </html>

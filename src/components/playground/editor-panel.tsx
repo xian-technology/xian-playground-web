@@ -49,6 +49,7 @@ export function EditorPanel() {
   const contractName = usePlayground((state) => state.doc.editor.contractName);
   const signer = usePlayground((state) => state.doc.environment.signer);
   const busy = usePlayground((state) => state.busy);
+  const engineReady = usePlayground((state) => state.engine === "ready");
   const { resolvedTheme } = useTheme();
   const [revision, setRevision] = useState(0);
   const insight = useDiagnostics(contractName, code, revision);
@@ -93,7 +94,7 @@ export function EditorPanel() {
       id="write"
       icon={FilePenLine}
       title="Write contract"
-      description="Write a contract, give it a con_ name and deploy it to your local chain."
+      description="Write a contract, name it con_…, and deploy it to the in-browser chain."
     >
       <div className="grid gap-1 border-b px-4 py-2.5">
         <div className="flex items-center gap-2">
@@ -180,6 +181,8 @@ export function EditorPanel() {
         </Collapsible>
       )}
 
+      <DeployStatus />
+
       <footer className="flex flex-wrap items-center gap-2 border-t px-4 py-2.5">
         <ProblemSummary checking={insight.checking} errors={errors} warnings={warnings} />
         <div className="ml-auto flex items-center gap-2">
@@ -198,12 +201,36 @@ export function EditorPanel() {
           </Button>
           <DeployButton
             busy={busy === "deploy"}
+            starting={!engineReady}
             disabled={busy !== null && busy !== "deploy"}
             buildConstructorKwargs={insight.constructor?.params.length ? constructorInput.build : () => "{}"}
           />
         </div>
       </footer>
     </Panel>
+  );
+}
+
+/** The outcome of the last deploy, next to the button that started it. */
+function DeployStatus() {
+  const run = usePlayground((state) => (state.lastRun?.kind === "deploy" ? state.lastRun : null));
+  if (!run) return null;
+  const { outcome } = run;
+  return (
+    <div
+      role={outcome.ok ? "status" : "alert"}
+      data-testid="deploy-status"
+      className={cn(
+        "flex items-start gap-2 border-t px-4 py-2 text-xs",
+        outcome.ok ? "bg-success-muted text-success-foreground" : "bg-error-muted text-error-foreground",
+      )}
+    >
+      {outcome.ok ? <CircleCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden /> : <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />}
+      <span className="min-w-0 flex-1 break-words">
+        {outcome.ok ? `Deployed ${run.contract}.` : `Deploy of ${run.contract} failed: ${outcome.error ?? "unknown error"}`}
+      </span>
+      {run.metered && <span className="shrink-0 tabular-nums">{outcome.chiUsed.toLocaleString("en-US")} chi used</span>}
+    </div>
   );
 }
 
@@ -269,12 +296,14 @@ function Collapsible({ open, onToggle, label, children }: { open: boolean; onTog
 
 interface DeployButtonProps {
   busy: boolean;
+  /** The VM is still loading. */
+  starting: boolean;
   disabled: boolean;
   /** Constructor kwargs as wire JSON text, or null when the form has errors. */
   buildConstructorKwargs(): string | null;
 }
 
-function DeployButton({ busy, disabled, buildConstructorKwargs }: DeployButtonProps) {
+function DeployButton({ busy, starting, disabled, buildConstructorKwargs }: DeployButtonProps) {
   const controller = useController();
   const deploy = useCallback(() => {
     const constructorKwargs = buildConstructorKwargs();
@@ -298,9 +327,9 @@ function DeployButton({ busy, disabled, buildConstructorKwargs }: DeployButtonPr
   }, [deploy]);
 
   return (
-    <Button size="sm" onClick={deploy} disabled={disabled || busy} aria-keyshortcuts="Control+Enter Meta+Enter">
-      {busy ? <Loader2 className="animate-spin" /> : <Rocket />}
-      {busy ? "Deploying…" : "Deploy"}
+    <Button size="sm" onClick={deploy} disabled={disabled || busy || starting} aria-keyshortcuts="Control+Enter Meta+Enter">
+      {busy || starting ? <Loader2 className="animate-spin" /> : <Rocket />}
+      {starting ? "Starting VM…" : busy ? "Deploying…" : "Deploy"}
       <Kbd aria-hidden className="ml-1 hidden bg-primary-foreground/15 text-primary-foreground sm:inline-flex">⌘↵</Kbd>
     </Button>
   );

@@ -1,6 +1,7 @@
 // Minimal static file server for the exported app (`out/`), used by the
 // Playwright suite and for local previews. Serves `.wasm` with the
-// `application/wasm` type that streaming WebAssembly compilation requires.
+// `application/wasm` type that streaming WebAssembly compilation requires,
+// and the cache headers a production host should send.
 import { createReadStream, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
@@ -40,8 +41,12 @@ function resolveFile(urlPath) {
 createServer((req, res) => {
   const file = resolveFile(req.url ?? "/");
   const target = file ?? join(root, "404.html");
+  // Hashed build assets never change: cache them for a year, like production hosts should.
+  const immutable = file !== null && file.includes(`${sep}_next${sep}static${sep}`);
   res.writeHead(file ? 200 : 404, {
     "Content-Type": TYPES[extname(target)] ?? "application/octet-stream",
+    "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+    "X-Content-Type-Options": "nosniff",
   });
   createReadStream(target).pipe(res);
 }).listen(port, host, () => {
