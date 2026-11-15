@@ -15,3 +15,16 @@ playground/.contract_state/
 playground/.sessions/
 .DS_Store
 graphify-out/
+
+# Next.js app
+/node_modules
+/.next/
+/out/
+/coverage/
+/test-results/
+/playwright-report/
+/reports/
+/.stryker-tmp/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
