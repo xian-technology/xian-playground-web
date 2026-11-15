@@ -3,6 +3,7 @@
  * worker-side dispatcher. Only `PlaygroundEngine` methods can be invoked.
  */
 
+import { errorMessage } from "@/lib/errors";
 import type { PlaygroundEngine } from "./types";
 
 export type EngineMethod = keyof PlaygroundEngine;
@@ -65,6 +66,6 @@ async function respond(engine: PlaygroundEngine, request: RpcRequest): Promise<R
   } catch (error) {
     // A Rust panic aborts the WebAssembly instance: nothing in this worker can run again.
     const fatal = error instanceof WebAssembly.RuntimeError;
-    return { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error), ...(fatal && { fatal }) };
+    return { id: request.id, ok: false, error: errorMessage(error), ...(fatal && { fatal }) };
   }
 }

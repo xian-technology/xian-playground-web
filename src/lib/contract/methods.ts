@@ -113,32 +113,33 @@ function toParam(node: JsonNode): MethodParam {
 
 /** Render simple default expressions the way the contract wrote them. */
 function defaultSource(node: JsonNode): string {
-  const kind = text(field(node, "node"));
-  if (kind === "constant") return constantSource(node as Obj);
-  if (kind === "unary_op" && text(field(node, "operator")) === "neg") {
-    const operand = field(node, "operand");
-    if (operand && text(field(operand, "node")) === "constant") return `-${constantSource(operand as Obj)}`;
-  }
-  if (kind === "call") {
-    const callee = text(field(field(node, "func"), "id"));
-    const args = field(node, "args");
-    if (callee === "decimal" && args?.t === "arr" && args.items.length === 1) {
-      return `decimal(${defaultSource(args.items[0]!)})`;
-    }
-  }
-  return "expression";
+  const render = DEFAULT_RENDERERS[text(field(node, "node")) ?? ""];
+  return render?.(node) ?? "expression";
 }
+
+const DEFAULT_RENDERERS: Record<string, (node: JsonNode) => string | null> = {
+  constant: (node) => constantSource(node as Obj),
+  unary_op: (node) => {
+    const operand = field(node, "operand");
+    const negatedConstant = text(field(node, "operator")) === "neg" && operand && text(field(operand, "node")) === "constant";
+    return negatedConstant ? `-${constantSource(operand as Obj)}` : null;
+  },
+  call: (node) => {
+    const args = field(node, "args");
+    const decimalCall = text(field(field(node, "func"), "id")) === "decimal" && args?.t === "arr" && args.items.length === 1;
+    return decimalCall ? `decimal(${defaultSource(args.items[0]!)})` : null;
+  },
+};
+
+const CONSTANT_RENDERERS: Record<string, (value: JsonNode | undefined) => string> = {
+  none: () => "None",
+  bool: (value) => (value?.t === "bool" && value.v ? "True" : "False"),
+  str: (value) => `'${text(value) ?? ""}'`,
+};
 
 function constantSource(node: Obj): string {
   const value = field(node, "value");
-  switch (text(field(node, "value_type"))) {
-    case "none":
-      return "None";
-    case "bool":
-      return value?.t === "bool" && value.v ? "True" : "False";
-    case "str":
-      return `'${text(value) ?? ""}'`;
-    default:
-      return value?.t === "num" ? value.raw : (text(value) ?? "expression");
-  }
+  const render = CONSTANT_RENDERERS[text(field(node, "value_type")) ?? ""];
+  if (render) return render(value);
+  return value?.t === "num" ? value.raw : (text(value) ?? "expression");
 }

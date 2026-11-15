@@ -115,7 +115,7 @@ describe("PlaygroundController", () => {
 
   it("refuses an invalid contract name without touching the chain", async () => {
     const { controller, engine, notes } = await setup();
-    controller.setContractName("Token");
+    controller.setEditor({ contractName: "Token" });
     expect(await controller.deploy("{}")).toBeUndefined();
     expect(engine.deploys).toEqual([]);
     expect(notes[0]?.[0]).toBe("error");
@@ -227,7 +227,7 @@ describe("PlaygroundController", () => {
     await controller.removeContract("con_demo_token");
     expect(controller.getState().contracts).toEqual([]);
     await controller.deploy("{}");
-    controller.setCode("x = 1");
+    controller.setEditor({ code: "x = 1" });
     await controller.resetWorkspace();
     expect(engine.store.size).toBe(0);
     expect(controller.getState().doc.editor.code).toContain("balances = Hash");
@@ -253,7 +253,7 @@ describe("PlaygroundController", () => {
 
   it("shows the saved workspace before the VM has started", async () => {
     const first = await setup();
-    first.controller.setCode("x = 1");
+    first.controller.setEditor({ code: "x = 1" });
     await first.controller.saveNow();
     const engine = new ToyEngine();
     let release!: () => void;

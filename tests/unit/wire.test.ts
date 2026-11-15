@@ -29,6 +29,26 @@ describe("sourceJsonToWire (user-typed JSON to exact wire JSON)", () => {
     expect(wire('{"__delta__":[1,30]}')).toBe('{"__delta__":[1,30]}');
   });
 
+  it("checks every wrapper's payload shape", () => {
+    for (const bad of [
+      '{"__set__":[1]}',
+      '{"__frozenset__":"x"}',
+      '{"__bytearray__":"abc"}',
+      '{"__bytes__":5}',
+      '{"__time__":[2024,1,1.5]}',
+      '{"__time__":"2024"}',
+      '{"__delta__":[1,9007199254740992]}',
+      '{"__delta__":[1,"2"]}',
+      '{"__big_int__":5}',
+      '{"__fixed__":1.5}',
+      '{"__big_int__":"01"}',
+    ]) {
+      expect(() => wire(bad), bad).toThrow(/__/);
+    }
+    expect(wire('{"__bytearray__":"0aFF"}')).toBe('{"__bytearray__":"0aFF"}');
+    expect(wire('{"__frozenset__":{"codec":"xian-set-1","items":[]}}')).toBe('{"__frozenset__":{"codec":"xian-set-1","items":[]}}');
+  });
+
   it("rejects integers beyond 512 bits", () => {
     expect(() => wire((1n << 512n).toString())).toThrow(/512/);
   });

@@ -1,8 +1,9 @@
 "use client";
 
+import { errorMessage } from "@/lib/errors";
 import { useCallback, useState } from "react";
 
-import { buildKwargs, parseField, type FieldValues } from "@/lib/contract/kwargs";
+import { buildKwargs, parseField, type FieldValues, type KwargsResult } from "@/lib/contract/kwargs";
 import type { ContractMethod } from "@/lib/contract/methods";
 import { json, stringifyJson } from "@/lib/values/json";
 import { sourceJsonToWire } from "@/lib/values/wire";
@@ -32,16 +33,13 @@ export function useKwargs(method: ContractMethod | null, resetKey: string): Kwar
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [jsonText, setJsonTextState] = useState("{}");
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [key, setKey] = useState(resetKey);
-  if (key !== resetKey) {
-    // Adjusting state while rendering: React's pattern for resetting on a prop change.
-    setKey(resetKey);
+  useResetOnChange(resetKey, () => {
     setModeState("form");
     setValues({});
     setErrors({});
     setJsonTextState("{}");
     setJsonError(null);
-  }
+  });
 
   const setValue = useCallback((name: string, value: string) => {
     setValues((current) => ({ ...current, [name]: value }));
@@ -69,25 +67,34 @@ export function useKwargs(method: ContractMethod | null, resetKey: string): Kwar
 
   const build = useCallback((): string | null => {
     if (!method) return null;
-    if (mode === "json") {
-      try {
-        const node = sourceJsonToWire(jsonText.trim() === "" ? "{}" : jsonText);
-        if (node.t !== "obj") throw new Error("Kwargs must be a JSON object, e.g. {\"to\": \"bob\"}.");
-        return stringifyJson(node);
-      } catch (error) {
-        setJsonError(error instanceof Error ? error.message : String(error));
-        return null;
-      }
-    }
-    const result = buildKwargs(method, values);
-    if (!result.ok) {
-      setErrors(result.errors);
-      return null;
-    }
-    return stringifyJson(result.kwargs);
+    const result = mode === "json" ? jsonKwargs(jsonText) : buildKwargs(method, values);
+    if (result.ok) return stringifyJson(result.kwargs);
+    if (mode === "json") setJsonError(result.errors.json ?? "");
+    else setErrors(result.errors);
+    return null;
   }, [method, mode, jsonText, values]);
 
   return { mode, values, errors, jsonText, jsonError, setMode, setValue, setJsonText, build };
+}
+
+/** Run `reset` while rendering when `key` changes (React's pattern for resetting state on a prop change). */
+function useResetOnChange(key: string, reset: () => void): void {
+  const [seen, setSeen] = useState(key);
+  if (seen !== key) {
+    setSeen(key);
+    reset();
+  }
+}
+
+/** Raw JSON kwargs (exact numbers); the error is reported under the `json` key. */
+export function jsonKwargs(text: string): KwargsResult {
+  try {
+    const node = sourceJsonToWire(text.trim() === "" ? "{}" : text);
+    if (node.t !== "obj") throw new Error('Kwargs must be a JSON object, e.g. {"to": "bob"}.');
+    return { ok: true, kwargs: node };
+  } catch (error) {
+    return { ok: false, errors: { json: errorMessage(error) } };
+  }
 }
 
 /** Pre-fill the JSON editor from whatever the form already holds. */

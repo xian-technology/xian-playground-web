@@ -5,6 +5,7 @@
  * smuggle in VM IR that differs from the source it shows.
  */
 
+import { errorMessage } from "@/lib/errors";
 import { contractNameError } from "@/lib/contract/names";
 import type { BlockEnvironment } from "@/lib/engine/types";
 import { parseWireJson } from "@/lib/values/wire";
@@ -100,15 +101,15 @@ function record(value: unknown, path: string): Record_ {
   return value as Record_;
 }
 
-function string(value: unknown, path: string): string {
-  if (typeof value !== "string") throw new TypeError(`${path} must be text.`);
-  return value;
+const TYPE_NAMES = { string: "text", boolean: "true or false" } as const;
+
+function primitive<K extends keyof typeof TYPE_NAMES>(kind: K, value: unknown, path: string): K extends "string" ? string : boolean {
+  if (typeof value !== kind) throw new TypeError(`${path} must be ${TYPE_NAMES[kind]}.`);
+  return value as K extends "string" ? string : boolean;
 }
 
-function boolean(value: unknown, path: string): boolean {
-  if (typeof value !== "boolean") throw new TypeError(`${path} must be true or false.`);
-  return value;
-}
+const string = (value: unknown, path: string) => primitive("string", value, path);
+const boolean = (value: unknown, path: string) => primitive("boolean", value, path);
 
 function array(value: unknown, path: string, max: number): unknown[] {
   if (!Array.isArray(value)) throw new TypeError(`${path} must be a list.`);
@@ -189,7 +190,7 @@ function wireText(value: unknown, path: string): string {
   try {
     parseWireJson(text);
   } catch (error) {
-    throw new TypeError(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new TypeError(`${path}: ${errorMessage(error)}`);
   }
   return text;
 }

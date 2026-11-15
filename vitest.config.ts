@@ -1,20 +1,27 @@
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import wasm from "vite-plugin-wasm";
 import { defineConfig } from "vitest/config";
 
+// The sibling WebAssembly packages (@xian-tech/compiler, @xian-tech/vm) live
+// outside this repo. In node-environment tests they stay external (Node >= 24
+// imports .wasm natively); DOM tests load them through Vite, which must be
+// allowed to read them.
+const siblings = ["@xian-tech/compiler", "@xian-tech/vm"].map((name) =>
+  realpathSync(fileURLToPath(new URL(`./node_modules/${name}`, import.meta.url))),
+);
+
 export default defineConfig({
-  plugins: [wasm()],
+  server: { fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), ...siblings] } },
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   test: {
     include: ["tests/unit/**/*.test.ts", "tests/unit/**/*.test.tsx"],
     environment: "node",
-    server: { deps: { inline: ["@xian-tech/compiler", "@xian-tech/vm"] } },
     coverage: {
       provider: "v8",
-      include: ["src/lib/**/*.ts"],
-      reporter: ["text-summary", "json"],
+      include: ["src/lib/**/*.ts", "src/components/playground/**/*.ts", "src/components/playground/**/*.tsx"],
+      reporter: ["text-summary", "lcov"],
     },
   },
 });

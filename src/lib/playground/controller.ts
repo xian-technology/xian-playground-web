@@ -4,6 +4,7 @@
  * through `subscribe`/`getState` (useSyncExternalStore).
  */
 
+import { errorMessage } from "@/lib/errors";
 import { parseField } from "@/lib/contract/kwargs";
 import { extractMethods, type ContractMethods } from "@/lib/contract/methods";
 import { contractNameError } from "@/lib/contract/names";
@@ -125,7 +126,7 @@ export class PlaygroundController {
       await this.refresh();
       this.set({ engine: "ready" });
     } catch (error) {
-      this.set({ phase: "failed", loadError: message(error) });
+      this.set({ phase: "failed", loadError: errorMessage(error) });
     }
   }
 
@@ -164,8 +165,8 @@ export class PlaygroundController {
     try {
       return await work();
     } catch (error) {
-      this.log({ level: "error", action: busy, message: message(error) });
-      this.deps.notify("error", message(error));
+      this.log({ level: "error", action: busy, message: errorMessage(error) });
+      this.deps.notify("error", errorMessage(error));
       await this.refresh().catch(() => undefined);
       return undefined;
     } finally {
@@ -173,13 +174,9 @@ export class PlaygroundController {
     }
   }
 
-  setCode(code: string): void {
-    this.set({ doc: { ...this.current.doc, editor: { ...this.current.doc.editor, code } } });
-    this.scheduleSave();
-  }
-
-  setContractName(contractName: string): void {
-    this.set({ doc: { ...this.current.doc, editor: { ...this.current.doc.editor, contractName } } });
+  /** Change the editor's code and/or contract name (saved shortly after). */
+  setEditor(patch: Partial<WorkspaceDoc["editor"]>): void {
+    this.set({ doc: { ...this.current.doc, editor: { ...this.current.doc.editor, ...patch } } });
     this.scheduleSave();
   }
 
@@ -283,7 +280,7 @@ export class PlaygroundController {
       try {
         writes = planStateEdit(this.current.state, deployed, editedText);
       } catch (error) {
-        this.deps.notify("error", message(error));
+        this.deps.notify("error", errorMessage(error));
         return false;
       }
       const before = Object.fromEntries(this.current.state.map((entry) => [entry.key, entry.value]));
@@ -346,8 +343,8 @@ export class PlaygroundController {
       } catch (error) {
         await this.deps.engine.importSnapshot(rollback);
         this.set({ doc: previous });
-        this.log({ level: "error", action: "import", message: `Could not open the ${origin}: ${message(error)}` });
-        this.deps.notify("error", `Could not open the ${origin}: ${message(error)}`);
+        this.log({ level: "error", action: "import", message: `Could not open the ${origin}: ${errorMessage(error)}` });
+        this.deps.notify("error", `Could not open the ${origin}: ${errorMessage(error)}`);
         return false;
       }
       this.set({ doc: { ...doc, contracts: doc.contracts.map((contract) => ({ ...contract, state: [] })) }, ui: defaultUiPrefs(), lastRun: null });
@@ -383,34 +380,34 @@ function chiDetail(outcome: ExecutionOutcome): string {
   return outcome.chiUsed ? `Chi used: ${outcome.chiUsed}` : "";
 }
 
-export function environmentErrors(environment: EnvironmentSettings, metering: MeteringSettings): Record<string, string> {
-  const errors: Record<string, string> = {};
-  if (environment.signer.trim() === "") errors.signer = "Enter a signer.";
-  if (environment.now.trim() !== "") {
-    try {
-      parseField("datetime", environment.now);
-    } catch (error) {
-      errors.now = message(error);
-    }
+const VM_CHI_CEILING = 1_000_000n;
+
+/** A message when `check` throws for non-empty `text`, null otherwise. */
+function fieldError(text: string, check: (text: string) => void, fallback?: string): string | null {
+  if (text.trim() === "") return null;
+  try {
+    check(text.trim());
+    return null;
+  } catch (error) {
+    return fallback ?? errorMessage(error);
   }
-  if (environment.blockNum.trim() !== "") {
-    try {
-      parseInteger(environment.blockNum.trim());
-    } catch {
-      errors.blockNum = "Enter a whole number.";
-    }
-  }
-  if (metering.chiLimit.trim() !== "") {
-    try {
-      const budget = parseInteger(metering.chiLimit.trim());
-      if (budget <= 0n || budget > 1_000_000n) throw new RangeError();
-    } catch {
-      errors.chiLimit = "Enter a whole number from 1 to 1,000,000, or leave empty for the VM ceiling.";
-    }
-  }
-  return errors;
 }
 
-function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function checkChiBudget(text: string): void {
+  const budget = parseInteger(text);
+  if (budget <= 0n || budget > VM_CHI_CEILING) throw new RangeError("chi budget out of range");
 }
+
+export function environmentErrors(environment: EnvironmentSettings, metering: MeteringSettings): Record<string, string> {
+  const checks: [string, string | null][] = [
+    ["signer", environment.signer.trim() === "" ? "Enter a signer." : null],
+    ["now", fieldError(environment.now, (text) => parseField("datetime", text))],
+    ["blockNum", fieldError(environment.blockNum, parseInteger, "Enter a whole number.")],
+    [
+      "chiLimit",
+      fieldError(metering.chiLimit, checkChiBudget, "Enter a whole number from 1 to 1,000,000, or leave empty for the VM ceiling."),
+    ],
+  ];
+  return Object.fromEntries(checks.filter((entry): entry is [string, string] => entry[1] !== null));
+}
+

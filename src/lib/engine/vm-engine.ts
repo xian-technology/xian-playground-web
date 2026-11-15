@@ -6,6 +6,7 @@
  * leaves untouched.
  */
 
+import { errorMessage } from "@/lib/errors";
 import type { ContractInfo, TxOutcome } from "@xian-tech/vm/types";
 
 import { parseField } from "@/lib/contract/kwargs";
@@ -127,7 +128,7 @@ export class VmEngine implements PlaygroundEngine {
         ok: false,
         rejected: true,
         result: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
         chiUsed: 0,
         writes: [],
         events: [],

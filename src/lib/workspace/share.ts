@@ -48,12 +48,12 @@ export async function decodeShareFragment(hash: string): Promise<WorkspaceDoc | 
 }
 
 async function pipe(bytes: Uint8Array, transform: CompressionStream): Promise<Uint8Array> {
-  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(transform);
+  const stream = new Response(bytes as BodyInit).body!.pipeThrough(transform);
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 async function inflateCapped(bytes: Uint8Array): Promise<Uint8Array> {
-  const reader = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+  const reader = new Response(bytes as BodyInit).body!.pipeThrough(new DecompressionStream("deflate-raw")).getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {

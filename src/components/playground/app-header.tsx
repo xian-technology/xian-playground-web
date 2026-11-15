@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useRef, useState } from "react";
-import { toast } from "sonner";
 
 import {
   AlertDialog,
@@ -40,13 +39,12 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { parseWorkspaceDoc, type WorkspaceDoc } from "@/lib/workspace/model";
-import { encodeShareFragment } from "@/lib/workspace/share";
+import type { WorkspaceDoc } from "@/lib/workspace/model";
 
 import { useController } from "./context";
 import { EXAMPLES } from "./examples";
+import { copyShareLink, downloadWorkspace, loadExample, readWorkspaceFile } from "./workspace-actions";
 
-export const IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 
 interface AppHeaderProps {
   onOpenDoc(doc: WorkspaceDoc, origin: "file"): void;
@@ -57,54 +55,9 @@ export function AppHeader({ onOpenDoc }: AppHeaderProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
-  const share = async () => {
-    try {
-      const fragment = await encodeShareFragment(controller.exportDoc());
-      const url = `${window.location.origin}${window.location.pathname}${fragment}`;
-      await navigator.clipboard.writeText(url);
-      toast.success("Share link copied.", { description: "Anyone with the link gets a copy of this workspace." });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create a share link.");
-    }
-  };
-
-  const exportFile = () => {
-    const text = JSON.stringify(controller.exportDoc(), null, 2);
-    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `xian-playground-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   const importFile = async (file: File) => {
-    if (file.size > IMPORT_MAX_BYTES) {
-      toast.error("This file is larger than 10 MB.");
-      return;
-    }
-    try {
-      onOpenDoc(parseWorkspaceDoc(JSON.parse(await file.text())), "file");
-    } catch (error) {
-      toast.error(`Could not read ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  const loadExample = (id: string) => {
-    const example = EXAMPLES.find((item) => item.id === id);
-    if (!example) return;
-    const previous = controller.getState().doc.editor;
-    controller.setCode(example.code);
-    controller.setContractName(example.contractName);
-    toast.success(`Loaded the ${example.title} example.`, {
-      action: {
-        label: "Undo",
-        onClick: () => {
-          controller.setCode(previous.code);
-          controller.setContractName(previous.contractName);
-        },
-      },
-    });
+    const doc = await readWorkspaceFile(file);
+    if (doc) onOpenDoc(doc, "file");
   };
 
   return (
@@ -132,7 +85,7 @@ export function AppHeader({ onOpenDoc }: AppHeaderProps) {
             <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel>Load into the editor</DropdownMenuLabel>
               {EXAMPLES.map((example) => (
-                <DropdownMenuItem key={example.id} onSelect={() => loadExample(example.id)} className="flex-col items-start gap-0">
+                <DropdownMenuItem key={example.id} onSelect={() => loadExample(controller, example.id)} className="flex-col items-start gap-0">
                   <span className="font-medium">{example.title}</span>
                   <span className="text-xs text-muted-foreground">{example.description}</span>
                 </DropdownMenuItem>
@@ -140,7 +93,7 @@ export function AppHeader({ onOpenDoc }: AppHeaderProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button variant="outline" size="sm" onClick={() => void share()}>
+          <Button variant="outline" size="sm" onClick={() => void copyShareLink(controller)}>
             <Link2 />
             <span className="hidden sm:inline">Share</span>
             <span className="sr-only sm:hidden">Copy share link</span>
@@ -158,10 +111,10 @@ export function AppHeader({ onOpenDoc }: AppHeaderProps) {
               <TooltipContent>Workspace</TooltipContent>
             </Tooltip>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem className="sm:hidden" onSelect={() => loadExample("counter")}>
+              <DropdownMenuItem className="sm:hidden" onSelect={() => loadExample(controller, "counter")}>
                 <BookOpen /> Load an example
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={exportFile}>
+              <DropdownMenuItem onSelect={() => downloadWorkspace(controller)}>
                 <Download /> Export workspace
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => fileRef.current?.click()}>

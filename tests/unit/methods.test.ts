@@ -48,3 +48,41 @@ describe("extractMethods (forms come from the compiled IR)", () => {
     expect(extractMethods('{"functions": 3}')).toEqual({ constructor: null, exports: [] });
   });
 });
+
+describe("default value rendering", () => {
+  const param = (name: string, def: unknown) => ({ name, annotation: null, kind: "positional_or_keyword", default: def });
+  const ir = (params: unknown[]) => JSON.stringify({ functions: [{ name: "f", visibility: "export", parameters: params }] });
+  const defaults = (params: unknown[]) => extractMethods(ir(params)).exports[0]!.params.map((p) => [p.type, p.defaultText]);
+  const constant = (value: unknown, value_type: string) => ({ node: "constant", value, value_type });
+
+  it("renders constants, negatives and decimal() calls; anything else is an expression", () => {
+    expect(
+      defaults([
+        param("a", constant(false, "bool")),
+        param("b", constant("1.5", "decimal")),
+        param("c", { node: "unary_op", operator: "neg", operand: { node: "name", id: "x" } }),
+        param("d", { node: "unary_op", operator: "not", operand: constant(true, "bool") }),
+        param("e", { node: "call", func: { id: "decimal" }, args: [constant("2", "str"), constant("3", "str")] }),
+        param("f", { node: "call", func: { id: "str" }, args: [] }),
+        param("g", constant(null, "mystery")),
+        param("h", null),
+      ]),
+    ).toEqual([
+      ["any", "False"],
+      ["any", "1.5"],
+      ["any", "expression"],
+      ["any", "expression"],
+      ["any", "expression"],
+      ["any", "expression"],
+      ["any", "expression"],
+      ["any", null],
+    ]);
+  });
+
+  it("ignores functions without a name or visibility and malformed parameter lists", () => {
+    const methods = extractMethods(
+      JSON.stringify({ functions: [{ visibility: "export" }, { name: "g", visibility: "export", parameters: 5 }, 7] }),
+    );
+    expect(methods.exports).toEqual([{ name: "g", kind: "export", docstring: null, params: [] }]);
+  });
+});

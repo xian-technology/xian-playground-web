@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { createBrowserEngine } from "@/lib/engine/create-engine";
+import { errorMessage } from "@/lib/errors";
 import { PlaygroundController } from "@/lib/playground/controller";
 import type { WorkspaceDoc } from "@/lib/workspace/model";
 import { createWorkspaceStore } from "@/lib/workspace/persistence";
@@ -51,30 +52,11 @@ export function PlaygroundApp() {
 
   useEffect(() => {
     void controller.init().then(async () => {
-      if (!window.location.hash.startsWith(SHARE_PREFIX)) return;
-      const hash = window.location.hash;
-      history.replaceState(null, "", window.location.pathname + window.location.search);
-      try {
-        const doc = await decodeShareFragment(hash);
-        if (doc) setPending({ doc, origin: "share link" });
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "This share link could not be opened.");
-      }
+      const doc = await takeShareLinkFromUrl();
+      if (doc) setPending({ doc, origin: "share link" });
     });
   }, [controller]);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        void controller.saveNow().then((saved) =>
-          saved ? toast.success("Saved in this browser.") : toast.warning("This browser blocks storage, so nothing could be saved."),
-        );
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [controller]);
+  useSaveShortcut(controller);
 
   return (
     <ControllerContext.Provider value={controller}>
@@ -89,6 +71,33 @@ export function PlaygroundApp() {
       />
     </ControllerContext.Provider>
   );
+}
+
+/** The workspace in the URL's share fragment (removed from the URL), if any. */
+async function takeShareLinkFromUrl(): Promise<WorkspaceDoc | null> {
+  const hash = window.location.hash;
+  if (!hash.startsWith(SHARE_PREFIX)) return null;
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  try {
+    return await decodeShareFragment(hash);
+  } catch (error) {
+    toast.error(errorMessage(error));
+    return null;
+  }
+}
+
+/** Cmd/Ctrl+S saves now (edits also save on their own). */
+function useSaveShortcut(controller: PlaygroundController): void {
+  useEffect(() => {
+    const onKey = async (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      if (await controller.saveNow()) toast.success("Saved in this browser.");
+      else toast.warning("This browser blocks storage, so nothing could be saved.");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [controller]);
 }
 
 function Shell({ onOpenDoc }: { onOpenDoc(doc: WorkspaceDoc, origin: "file"): void }) {

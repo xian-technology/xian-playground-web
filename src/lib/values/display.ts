@@ -62,57 +62,65 @@ function describeObject(node: Extract<JsonNode, { t: "obj" }>): DisplayValue {
   return { kind: "dict", entries: node.entries.map(([key, value]) => [key, describeNode(value)]) };
 }
 
+type Decoder = (payload: JsonNode | undefined) => DisplayValue | null;
+
+const textOf = (node: JsonNode | undefined): string | null => (node?.t === "str" ? node.v : null);
+const intsOf = (node: JsonNode | undefined): number[] =>
+  node?.t === "arr" ? node.items.map((item) => (item.t === "num" ? Number(item.raw) : NaN)) : [];
+const textScalar = (type: ScalarType, render: (text: string) => string = (text) => text): Decoder => (payload) => {
+  const text = textOf(payload);
+  return text === null ? null : scalar(type, render(text));
+};
+
+/** Single-key runtime wrappers of the wire format. */
+const WRAPPERS: Record<string, Decoder> = {
+  __fixed__: textScalar("decimal"),
+  __big_int__: textScalar("int"),
+  __time__: (payload) => scalar("datetime", formatDatetime(intsOf(payload))),
+  __delta__: (payload) => {
+    const [days = 0, seconds = 0] = intsOf(payload);
+    return scalar("timedelta", formatTimedelta(days, seconds));
+  },
+  __bytes__: textScalar("bytes", (hex) => `0x${hex}`),
+  __bytearray__: textScalar("bytearray", (hex) => `0x${hex}`),
+  __set__: (payload) => describeSet("set", payload),
+  __frozenset__: (payload) => describeSet("frozenset", payload),
+};
+
 function describeWrapper(tag: string, payload: JsonNode): DisplayValue | null {
-  const ints = payload.t === "arr" ? payload.items.map((item) => (item.t === "num" ? Number(item.raw) : NaN)) : [];
-  switch (tag) {
-    case "__fixed__":
-      return payload.t === "str" ? scalar("decimal", payload.v) : null;
-    case "__big_int__":
-      return payload.t === "str" ? scalar("int", payload.v) : null;
-    case "__time__":
-      return scalar("datetime", formatDatetime(ints));
-    case "__delta__":
-      return scalar("timedelta", formatTimedelta(ints[0] ?? 0, ints[1] ?? 0));
-    case "__bytes__":
-    case "__bytearray__":
-      return payload.t === "str" ? scalar(tag === "__bytes__" ? "bytes" : "bytearray", `0x${payload.v}`) : null;
-    case "__set__":
-    case "__frozenset__":
-      return describeSet(tag === "__set__" ? "set" : "frozenset", payload);
-    default:
-      return null;
-  }
+  return WRAPPERS[tag]?.(payload) ?? null;
 }
 
-function describeSet(type: "set" | "frozenset", payload: JsonNode): DisplayValue | null {
-  const items = payload.t === "obj" ? payload.entries.find(([key]) => key === "items")?.[1] : undefined;
+function describeSet(type: "set" | "frozenset", payload: JsonNode | undefined): DisplayValue | null {
+  const items = payload?.t === "obj" ? payload.entries.find(([key]) => key === "items")?.[1] : undefined;
   if (items?.t !== "arr") return null;
   return { kind: "list", type, items: items.items.map(describeSetMember) };
 }
 
+const nested = (type: "list" | "frozenset"): Decoder => (value) =>
+  value?.t === "arr" ? { kind: "list", type, items: value.items.map(describeSetMember) } : null;
+
+/** Typed members of the `xian-set-1` codec: `[kind, value]`. */
+const SET_MEMBERS: Record<string, Decoder> = {
+  none: () => scalar("null", "None"),
+  bool: (value) => scalar("bool", value?.t === "bool" && value.v ? "True" : "False"),
+  int: textScalar("int"),
+  str: textScalar("str"),
+  fixed: textScalar("decimal", (scaled) => unscaleFixed(scaled)),
+  bytes: textScalar("bytes", (hex) => `0x${hex}`),
+  datetime: (value) => scalar("datetime", formatDatetime(intsOf(value))),
+  timedelta: textScalar("timedelta", (total) => {
+    const seconds = Number(total);
+    return formatTimedelta(Math.floor(seconds / 86_400), ((seconds % 86_400) + 86_400) % 86_400);
+  }),
+  tuple: nested("list"),
+  frozenset: nested("frozenset"),
+};
+
 function describeSetMember(member: JsonNode): DisplayValue {
-  if (member.t !== "arr") return scalar("raw", JSON.stringify(member));
-  const [kind, value] = member.items;
-  const text = value?.t === "str" ? value.v : "";
-  switch (kind?.t === "str" ? kind.v : "") {
-    case "none":
-      return scalar("null", "None");
-    case "bool":
-      return scalar("bool", value?.t === "bool" && value.v ? "True" : "False");
-    case "int":
-      return scalar("int", text);
-    case "str":
-      return scalar("str", text);
-    case "fixed":
-      return scalar("decimal", unscaleFixed(text));
-    case "tuple":
-    case "frozenset":
-      return value?.t === "arr"
-        ? { kind: "list", type: kind?.t === "str" && kind.v === "tuple" ? "list" : "frozenset", items: value.items.map(describeSetMember) }
-        : scalar("raw", "");
-    default:
-      return scalar("raw", JSON.stringify(member));
-  }
+  const [kind, value] = member.t === "arr" ? member.items : [];
+  const decoded = kind?.t === "str" ? SET_MEMBERS[kind.v]?.(value) : null;
+  return decoded ?? scalar("raw", stringifyJson(member));
 }
 
 /** The set codec stores decimals scaled by 10^30; render the canonical text. */

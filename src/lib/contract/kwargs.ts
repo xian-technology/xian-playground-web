@@ -4,11 +4,12 @@
  * The VM stays the final authority: it validates every value again.
  */
 
+import { errorMessage } from "@/lib/errors";
 import { json, type JsonNode } from "@/lib/values/json";
 import { canonicalDecimal, DECIMAL_SCALE, parseInteger } from "@/lib/values/numbers";
 import { integerToWire, sourceJsonToWire } from "@/lib/values/wire";
 
-import type { ContractMethod, ParamType } from "./methods";
+import type { ContractMethod, MethodParam, ParamType } from "./methods";
 
 export type FieldValues = Record<string, string | undefined>;
 export type KwargsResult =
@@ -46,19 +47,27 @@ export function buildKwargs(method: ContractMethod, values: FieldValues): Kwargs
   const entries: [string, JsonNode][] = [];
   const errors: Record<string, string> = {};
   for (const param of method.params) {
-    const raw = values[param.name] ?? "";
-    if (raw === "" && param.type !== "str") {
-      if (param.required) errors[param.name] = "Enter a value.";
-      continue;
-    }
-    if (raw === "" && !param.required) continue;
-    try {
-      entries.push([param.name, parseField(param.type, raw)]);
-    } catch (error) {
-      errors[param.name] = error instanceof Error ? error.message : String(error);
-    }
+    const field = readField(param, values[param.name] ?? "");
+    if ("error" in field) errors[param.name] = field.error;
+    else if ("node" in field) entries.push([param.name, field.node]);
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, kwargs: json.obj(entries) };
+}
+
+type FieldRead = { node: JsonNode } | { error: string } | { omitted: true };
+
+/**
+ * An empty field means "use the default" for optional parameters; for a
+ * required one it is an error, except text, where empty is the empty string.
+ */
+function readField(param: MethodParam, raw: string): FieldRead {
+  if (raw === "" && !param.required) return { omitted: true };
+  if (raw === "" && param.type !== "str") return { error: "Enter a value." };
+  try {
+    return { node: parseField(param.type, raw) };
+  } catch (error) {
+    return { error: errorMessage(error) };
+  }
 }
 
 function integer(text: string, message: string): bigint {
@@ -89,14 +98,21 @@ function parseBool(text: string): JsonNode {
 function parseDatetime(text: string): JsonNode {
   const match = DATETIME.exec(text.trim());
   if (!match) throw new Error("Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS.");
-  const [year, month, day, hour, minute, second] = match.slice(1, 7).map((part) => Number(part ?? "0")) as number[];
+  const parts = match.slice(1, 7).map((part) => Number(part ?? "0"));
   const micro = Number((match[7] ?? "").padEnd(6, "0"));
-  const daysInMonth = new Date(Date.UTC(year!, month!, 0)).getUTCDate();
-  if (year! < 1 || month! < 1 || month! > 12 || day! < 1 || day! > daysInMonth) {
-    throw new Error("This date does not exist.");
-  }
-  if (hour! > 23 || minute! > 59 || second! > 59) throw new Error("This time does not exist.");
-  return json.obj([["__time__", json.arr([year!, month!, day!, hour!, minute!, second!, micro].map((n) => json.num(String(n))))]]);
+  checkDate(parts[0]!, parts[1]!, parts[2]!);
+  checkTime(parts[3]!, parts[4]!, parts[5]!);
+  return json.obj([["__time__", json.arr([...parts, micro].map((n) => json.num(String(n))))]]);
+}
+
+function checkDate(year: number, month: number, day: number): void {
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const valid = year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth;
+  if (!valid) throw new Error("This date does not exist.");
+}
+
+function checkTime(hour: number, minute: number, second: number): void {
+  if (hour > 23 || minute > 59 || second > 59) throw new Error("This time does not exist.");
 }
 
 function parseTimedelta(text: string): JsonNode {
@@ -121,7 +137,7 @@ function userJson(text: string): JsonNode {
   try {
     return sourceJsonToWire(text);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorMessage(error);
     if (error instanceof SyntaxError) {
       throw new Error(`Enter JSON; wrap text in double quotes, e.g. "alice". (${reason})`);
     }

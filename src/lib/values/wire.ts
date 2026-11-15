@@ -77,35 +77,30 @@ function objectToWire(node: Extract<JsonNode, { t: "obj" }>, mode: Mode): JsonNo
   return node;
 }
 
+/** Payload rules per runtime tag; each returns false for an invalid payload. */
+const PAYLOAD_RULES: Record<ReservedTag, (payload: JsonNode) => boolean> = {
+  __fixed__: (payload) => payload.t === "str" && canonicalOrNull(payload.v) === payload.v,
+  __big_int__: (payload) => payload.t === "str" && isCanonicalBigInt(payload.v),
+  __time__: (payload) => isSafeIntArray(payload, [3, 4, 5, 6, 7]),
+  __delta__: (payload) => isSafeIntArray(payload, [2]),
+  __bytes__: isHexText,
+  __bytearray__: isHexText,
+  // Typed member envelopes are validated by the VM itself.
+  __set__: (payload) => payload.t === "obj",
+  __frozenset__: (payload) => payload.t === "obj",
+};
+
+const PAYLOAD_ERRORS: Partial<Record<ReservedTag, string>> = {
+  __fixed__: "noncanonical __fixed__ decimal",
+  __big_int__: "noncanonical __big_int__",
+};
+
 function checkWrapper(tag: ReservedTag, payload: JsonNode): void {
-  const fail = (): never => {
-    throw new TypeError(`invalid ${tag} payload`);
-  };
-  switch (tag) {
-    case "__fixed__":
-      if (payload.t !== "str" || canonicalOrNull(payload.v) !== payload.v) {
-        throw new TypeError("noncanonical __fixed__ decimal");
-      }
-      return;
-    case "__big_int__":
-      if (payload.t !== "str" || !isCanonicalBigInt(payload.v)) throw new TypeError("noncanonical __big_int__");
-      return;
-    case "__time__":
-      if (!isSafeIntArray(payload, [3, 4, 5, 6, 7])) fail();
-      return;
-    case "__delta__":
-      if (!isSafeIntArray(payload, [2])) fail();
-      return;
-    case "__bytes__":
-    case "__bytearray__":
-      if (payload.t !== "str" || !/^(?:[0-9a-fA-F]{2})*$/.test(payload.v)) fail();
-      return;
-    case "__set__":
-    case "__frozenset__":
-      // Typed member envelopes are validated by the VM itself.
-      if (payload.t !== "obj") fail();
-      return;
-  }
+  if (!PAYLOAD_RULES[tag](payload)) throw new TypeError(PAYLOAD_ERRORS[tag] ?? `invalid ${tag} payload`);
+}
+
+function isHexText(payload: JsonNode): boolean {
+  return payload.t === "str" && /^(?:[0-9a-fA-F]{2})*$/.test(payload.v);
 }
 
 function canonicalOrNull(text: string): string | null {

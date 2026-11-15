@@ -40,6 +40,31 @@ describe("describeWire / formatInline (display never changes a value)", () => {
     expect(show('{"__frozenset__":{"codec":"xian-set-1","items":[]}}')).toBe("frozenset()");
   });
 
+  it("shows every typed set member kind", () => {
+    const members = [
+      '["bytes","00ff"]',
+      '["datetime",[2024,2,1,12,30,0,0]]',
+      '["timedelta","90061"]',
+      '["tuple",[["int","1"],["str","a"]]]',
+      '["frozenset",[["int","2"]]]',
+      '["mystery","x"]',
+      '"loose"',
+    ];
+    expect(show(`{"__set__":{"codec":"xian-set-1","items":[${members.join(",")}]}}`)).toBe(
+      '{0x00ff, 2024-02-01 12:30:00, 1 day, 1:01:01, [1, "a"], frozenset({2}), ["mystery","x"], "loose"}',
+    );
+    expect(show('{"__frozenset__":{"codec":"xian-set-1","items":[["fixed","-2500000000000000000000000000000"]]}}')).toBe(
+      "frozenset({-2.5})",
+    );
+  });
+
+  it("treats malformed wrappers as plain dicts", () => {
+    expect(describeWire('{"__set__":{"codec":"xian-set-1","items":5}}').kind).toBe("dict");
+    expect(show('{"__bytearray__":"0a"}')).toBe("0x0a");
+    expect(describeWire('{"__bytearray__":"0a"}')).toMatchObject({ type: "bytearray" });
+    expect(show('{"__repr__":"<contract>"}')).toBe('{"__repr__": "<contract>"}');
+  });
+
   it("falls back to the raw text when the VM output is not valid wire JSON", () => {
     expect(describeWire("1.5")).toEqual({ kind: "scalar", type: "raw", text: "1.5" });
   });

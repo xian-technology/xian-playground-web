@@ -69,82 +69,106 @@ interface ParamFieldProps {
 
 function ParamField({ param, value, error, onChange, onSubmit }: ParamFieldProps) {
   const id = useId();
-  const hintId = `${id}-hint`;
-  const errorId = `${id}-error`;
-  const describedBy = [param.defaultText !== null ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined;
-  const common = {
+  const hintId = param.defaultText !== null ? `${id}-hint` : null;
+  const errorId = error ? `${id}-error` : null;
+  const control: ControlProps = {
     id,
     "aria-invalid": error ? true : undefined,
-    "aria-describedby": describedBy,
+    "aria-describedby": [hintId, errorId].filter(Boolean).join(" ") || undefined,
     "aria-required": param.required || undefined,
   };
-  const submitOnModEnter = (event: React.KeyboardEvent) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      event.preventDefault();
-      onSubmit?.();
-    }
-  };
-
   return (
     <div className="grid gap-1.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor={id} className="font-mono text-[0.8rem] font-medium">
-          {param.name}
-        </label>
-        <Badge variant="type">{param.annotation ?? "Any"}</Badge>
-        {!param.required && <span className="text-xs text-muted-foreground">optional</span>}
-        {param.keywordOnly && <span className="text-xs text-muted-foreground">keyword-only</span>}
-      </div>
-      {param.type === "bool" ? (
-        <Select
-          value={value === "" ? (param.required ? undefined : DEFAULT_CHOICE) : value}
-          onValueChange={(choice) => onChange(choice === DEFAULT_CHOICE ? "" : choice)}
-        >
-          <SelectTrigger {...common} className="w-full sm:w-48">
-            <SelectValue placeholder="Choose true or false" />
-          </SelectTrigger>
-          <SelectContent>
-            {!param.required && <SelectItem value={DEFAULT_CHOICE}>Use default</SelectItem>}
-            <SelectItem value="true">true</SelectItem>
-            <SelectItem value="false">false</SelectItem>
-          </SelectContent>
-        </Select>
-      ) : MULTILINE.includes(param.type) ? (
-        <Textarea
-          {...common}
-          value={value}
-          spellCheck={false}
-          placeholder={PLACEHOLDERS[param.type]}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={submitOnModEnter}
-          className="min-h-16 font-mono text-[0.8rem]"
-        />
-      ) : (
-        <Input
-          {...common}
-          value={value}
-          spellCheck={false}
-          autoComplete="off"
-          inputMode={NUMERIC.includes(param.type) ? "decimal" : undefined}
-          placeholder={PLACEHOLDERS[param.type]}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            submitOnModEnter(event);
-            if (event.key === "Enter" && !event.defaultPrevented) onSubmit?.();
-          }}
-          className={cn("font-mono text-[0.8rem]", NUMERIC.includes(param.type) && "tabular-nums")}
-        />
-      )}
-      {param.defaultText !== null && (
+      <ParamLabel param={param} htmlFor={id} />
+      <ParamInput param={param} value={value} control={control} onChange={onChange} onSubmit={onSubmit} />
+      {hintId && (
         <p id={hintId} className="text-xs text-muted-foreground">
           Leave empty to use the default: <code className="font-mono">{param.defaultText}</code>
         </p>
       )}
-      {error && (
+      {errorId && (
         <p id={errorId} role="alert" className="text-xs text-error-foreground">
           {error}
         </p>
       )}
     </div>
+  );
+}
+
+interface ControlProps {
+  id: string;
+  "aria-invalid": true | undefined;
+  "aria-describedby": string | undefined;
+  "aria-required": true | undefined;
+}
+
+function ParamLabel({ param, htmlFor }: { param: MethodParam; htmlFor: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label htmlFor={htmlFor} className="font-mono text-[0.8rem] font-medium">
+        {param.name}
+      </label>
+      <Badge variant="type">{param.annotation ?? "Any"}</Badge>
+      {!param.required && <span className="text-xs text-muted-foreground">optional</span>}
+      {param.keywordOnly && <span className="text-xs text-muted-foreground">keyword-only</span>}
+    </div>
+  );
+}
+
+interface ParamInputProps {
+  param: MethodParam;
+  value: string;
+  control: ControlProps;
+  onChange(value: string): void;
+  onSubmit?(): void;
+}
+
+/** Cmd/Ctrl+Enter submits from any field; plain Enter also submits single-line fields. */
+function submitKeys(onSubmit: (() => void) | undefined, singleLine: boolean) {
+  return (event: React.KeyboardEvent) => {
+    const modEnter = (event.metaKey || event.ctrlKey) && event.key === "Enter";
+    if (!modEnter && !(singleLine && event.key === "Enter")) return;
+    event.preventDefault();
+    onSubmit?.();
+  };
+}
+
+function ParamInput({ param, value, control, onChange, onSubmit }: ParamInputProps) {
+  if (param.type === "bool") return <BoolInput required={param.required} value={value} control={control} onChange={onChange} />;
+  const shared = {
+    ...control,
+    value,
+    spellCheck: false,
+    placeholder: PLACEHOLDERS[param.type],
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(event.target.value),
+  };
+  if (MULTILINE.includes(param.type)) {
+    return <Textarea {...shared} onKeyDown={submitKeys(onSubmit, false)} className="min-h-16 font-mono text-[0.8rem]" />;
+  }
+  const numeric = NUMERIC.includes(param.type);
+  return (
+    <Input
+      {...shared}
+      autoComplete="off"
+      inputMode={numeric ? "decimal" : undefined}
+      onKeyDown={submitKeys(onSubmit, true)}
+      className={cn("font-mono text-[0.8rem]", numeric && "tabular-nums")}
+    />
+  );
+}
+
+function BoolInput({ required, value, control, onChange }: { required: boolean; value: string; control: ControlProps; onChange(value: string): void }) {
+  const selected = value !== "" ? value : required ? undefined : DEFAULT_CHOICE;
+  return (
+    <Select value={selected} onValueChange={(choice) => onChange(choice === DEFAULT_CHOICE ? "" : choice)}>
+      <SelectTrigger {...control} className="w-full sm:w-48">
+        <SelectValue placeholder="Choose true or false" />
+      </SelectTrigger>
+      <SelectContent>
+        {!required && <SelectItem value={DEFAULT_CHOICE}>Use default</SelectItem>}
+        <SelectItem value="true">true</SelectItem>
+        <SelectItem value="false">false</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
