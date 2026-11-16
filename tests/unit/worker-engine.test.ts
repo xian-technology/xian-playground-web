@@ -133,6 +133,69 @@ describe("WorkerEngine", () => {
     await expect(pending).rejects.toThrow("The engine worker crashed.");
   });
 
+  it("rejects requests after startup failed and can reset with a fresh worker", async () => {
+    let fireError: ((event: ErrorEvent) => void) | undefined;
+    const engines: MemoryEngine[] = [];
+    const spawnReady = spawnFake(engines, []);
+    let first = true;
+    const engine = new WorkerEngine(() => {
+      if (!first) return spawnReady();
+      first = false;
+      return {
+        postMessage: () => {},
+        addEventListener: (type: string, listener: (event: never) => void) => {
+          if (type === "error") fireError = listener as (event: ErrorEvent) => void;
+        },
+        terminate: () => {},
+      } as WorkerLike;
+    });
+    fireError!({ message: "WASM startup failed" } as ErrorEvent);
+    const stalled = new Promise((_, reject) => setTimeout(() => reject(new Error("request stalled")), 50));
+    await expect(Promise.race([engine.state(), stalled])).rejects.toThrow("WASM startup failed");
+    await engine.reset();
+    expect(await engine.state()).toEqual([{ key: "con_a.v", value: "1" }]);
+    expect(engines).toHaveLength(1);
+  });
+
+  it("ignores a terminated worker's late error while its replacement starts", async () => {
+    const errors: ((event: ErrorEvent) => void)[] = [];
+    const spawn = spawnFake([], []);
+    const engine = new WorkerEngine(() => {
+      const worker = spawn();
+      return {
+        ...worker,
+        addEventListener: (type: string, listener: (event: never) => void) => {
+          if (type === "error") errors.push(listener as (event: ErrorEvent) => void);
+          (worker.addEventListener as (type: string, listener: (event: never) => void) => void)(type, listener);
+        },
+      } as WorkerLike;
+    }, 30);
+    expect((await engine.call(call("spin"))).ok).toBe(false);
+    const pending = engine.state();
+    errors[0]!({ message: "old worker failed" } as ErrorEvent);
+    expect(await pending).toEqual([{ key: "con_a.v", value: "1" }]);
+  });
+
+  it("does not dispatch a canceled request after a failed startup reports ready", async () => {
+    let fireError: ((event: ErrorEvent) => void) | undefined;
+    let fireMessage: ((event: MessageEvent<WorkerMessage>) => void) | undefined;
+    const posted: RpcRequest[] = [];
+    const engine = new WorkerEngine(() => ({
+      postMessage: (request: RpcRequest) => posted.push(request),
+      addEventListener: (type: string, listener: (event: never) => void) => {
+        if (type === "error") fireError = listener as (event: ErrorEvent) => void;
+        if (type === "message") fireMessage = listener as (event: MessageEvent<WorkerMessage>) => void;
+      },
+      terminate: () => {},
+    }) as WorkerLike);
+    const pending = engine.state();
+    fireError!({ message: "WASM startup failed" } as ErrorEvent);
+    await expect(pending).rejects.toThrow("WASM startup failed");
+    fireMessage!({ data: { ready: true } } as MessageEvent<WorkerMessage>);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(posted).toEqual([]);
+  });
+
   it("refuses unknown methods on the worker side", async () => {
     const replies: RpcResponse[] = [];
     let listener: ((event: MessageEvent) => void) | undefined;

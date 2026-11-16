@@ -42,6 +42,7 @@ export class WorkerEngine implements PlaygroundEngine {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private checkpoint: string | null = null;
+  private failure: Error | null = null;
 
   constructor(
     private readonly spawn: () => WorkerLike,
@@ -86,19 +87,27 @@ export class WorkerEngine implements PlaygroundEngine {
   }
 
   async reset(): Promise<void> {
+    if (this.failure !== null) await this.restart();
     await this.send("reset", []);
     this.checkpoint = null;
   }
 
   private start(): void {
-    this.worker = this.spawn();
+    this.failure = null;
+    const worker = this.spawn();
+    this.worker = worker;
     let markReady!: () => void;
     this.ready = new Promise((resolve) => (markReady = resolve));
-    this.worker.addEventListener("message", (event) => {
+    worker.addEventListener("message", (event) => {
+      if (worker !== this.worker) return;
       if ("ready" in event.data) markReady();
       else this.settle(event.data);
     });
-    this.worker.addEventListener("error", (event) => this.failAll(new Error(event.message || "The engine worker crashed.")));
+    worker.addEventListener("error", (event) => {
+      if (worker !== this.worker) return;
+      this.failure = new Error(event.message || "The engine worker crashed.");
+      this.failAll(this.failure);
+    });
   }
 
   private settle(response: RpcResponse): void {
@@ -126,11 +135,14 @@ export class WorkerEngine implements PlaygroundEngine {
   }
 
   private post(method: RpcRequest["method"], args: unknown[]): Promise<unknown> {
+    if (this.failure !== null) return Promise.reject(this.failure);
     const id = this.nextId++;
     const worker = this.worker;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      void this.ready.then(() => worker.postMessage({ id, method, args }));
+      void this.ready.then(() => {
+        if (this.pending.has(id)) worker.postMessage({ id, method, args });
+      });
     });
   }
 
