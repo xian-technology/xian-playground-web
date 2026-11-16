@@ -56,6 +56,20 @@ describe("VmEngine on the real @xian-tech/vm", () => {
     expect(await other.state()).toEqual(await vm.state());
   });
 
+  it("preserves prototype-named dictionary data and optional parameter defaults", async () => {
+    const vm = engine();
+    const source = "@export\ndef choose(constructor: str = 'treasury', data: dict = None):\n    return [constructor, data['__proto__']]\n";
+    const deployed = await vm.deploy({ signer: "demo", name: "con_keys", source, constructorKwargs: "{}", environment: env, metering: metered });
+    expect(deployed.ok).toBe(true);
+    const methods = extractMethods((await vm.contracts()).find((contract) => contract.name === "con_keys")!.vmIrJson);
+    const method = methods.exports.find((entry) => entry.name === "choose")!;
+    const kwargs = buildKwargs(method, { data: '{"__proto__":"payload"}' });
+    expect(kwargs.ok, JSON.stringify({ method, kwargs })).toBe(true);
+    if (!kwargs.ok) throw new Error("kwargs");
+    const result = await vm.call({ signer: "demo", contract: "con_keys", function: "choose", kwargs: stringifyJson(kwargs.kwargs), environment: env, metering: metered });
+    expect(result).toMatchObject({ ok: true, result: '["treasury","payload"]' });
+  });
+
   it("agrees with the VM's own decimal canonicalizer (differential)", () => {
     const samples = [
       "1.50", "-.5", "+0012300e-2", "100000e-35", "-0e9999999999999999999999", "0", "5.", "1E+3",

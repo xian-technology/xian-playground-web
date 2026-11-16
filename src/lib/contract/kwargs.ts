@@ -7,11 +7,16 @@
 import { errorMessage } from "@/lib/errors";
 import { json, type JsonNode } from "@/lib/values/json";
 import { canonicalDecimal, DECIMAL_SCALE, parseInteger } from "@/lib/values/numbers";
-import { integerToWire, sourceJsonToWire } from "@/lib/values/wire";
+import { integerToWire, RESERVED_TAGS, sourceJsonToWire } from "@/lib/values/wire";
 
 import type { ContractMethod, MethodParam, ParamType } from "./methods";
 
 export type FieldValues = Record<string, string | undefined>;
+
+/** Contract parameter names are data, including names on Object.prototype. */
+export function fieldValue<T>(fields: Record<string, T | undefined>, name: string): T | undefined {
+  return Object.hasOwn(fields, name) ? fields[name] : undefined;
+}
 export type KwargsResult =
   | { ok: true; kwargs: JsonNode }
   | { ok: false; errors: Record<string, string> };
@@ -45,14 +50,14 @@ export function parseField(type: ParamType, text: string): JsonNode {
 
 export function buildKwargs(method: ContractMethod, values: FieldValues): KwargsResult {
   const entries: [string, JsonNode][] = [];
-  const errors: Record<string, string> = {};
+  const errors: [string, string][] = [];
   for (const param of method.params) {
-    const field = readField(param, values[param.name] ?? "");
+    const field = readField(param, fieldValue(values, param.name) ?? "");
     if (field === null) continue;
-    if ("error" in field) errors[param.name] = field.error;
+    if ("error" in field) errors.push([param.name, field.error]);
     else entries.push([param.name, field.node]);
   }
-  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, kwargs: json.obj(entries) };
+  return errors.length ? { ok: false, errors: Object.fromEntries(errors) } : { ok: true, kwargs: json.obj(entries) };
 }
 
 /** The field's wire value, why it is invalid, or null when it is left to its default. */
@@ -62,7 +67,7 @@ type FieldRead = { node: JsonNode } | { error: string } | null;
  * An empty field means "use the default" for optional parameters; for a
  * required one it is an error, except text, where empty is the empty string.
  */
-function readField(param: MethodParam, raw: string): FieldRead {
+export function readField(param: MethodParam, raw: string): FieldRead {
   if (raw === "" && !param.required) return null;
   if (raw === "" && param.type !== "str") return { error: "Enter a value." };
   try {
@@ -154,7 +159,7 @@ function expectJson(text: string, kind: "obj" | "arr", message: string): JsonNod
 }
 
 function isWrapper(node: JsonNode): boolean {
-  return node.t === "obj" && node.entries.length === 1 && /^__\w+__$/.test(node.entries[0]![0]);
+  return node.t === "obj" && node.entries.length === 1 && (RESERVED_TAGS as readonly string[]).includes(node.entries[0]![0]);
 }
 
 /**

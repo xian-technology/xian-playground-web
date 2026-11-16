@@ -3,7 +3,7 @@
 import { errorMessage } from "@/lib/errors";
 import { useCallback, useState } from "react";
 
-import { buildKwargs, parseField, type FieldValues, type KwargsResult } from "@/lib/contract/kwargs";
+import { buildKwargs, fieldValue, readField, type FieldValues, type KwargsResult } from "@/lib/contract/kwargs";
 import type { ContractMethod } from "@/lib/contract/methods";
 import { json, stringifyJson } from "@/lib/values/json";
 import { sourceJsonToWire } from "@/lib/values/wire";
@@ -44,7 +44,7 @@ export function useKwargs(method: ContractMethod | null, resetKey: string): Kwar
   const setValue = useCallback((name: string, value: string) => {
     setValues((current) => ({ ...current, [name]: value }));
     setErrors((current) => {
-      if (!(name in current)) return current;
+      if (!Object.hasOwn(current, name)) return current;
       const next = { ...current };
       delete next[name];
       return next;
@@ -99,13 +99,11 @@ export function jsonKwargs(text: string): KwargsResult {
 
 /** Pre-fill the JSON editor from whatever the form already holds. */
 function formToJson(method: ContractMethod, values: FieldValues): string {
-  const entries = method.params.map((param): [string, ReturnType<typeof json.str>] => {
-    const raw = values[param.name] ?? "";
-    try {
-      return [param.name, raw === "" && param.type !== "str" ? json.null() : parseField(param.type, raw)];
-    } catch {
-      return [param.name, json.str(raw)];
-    }
+  const entries = method.params.flatMap((param): [string, ReturnType<typeof json.str>][] => {
+    const raw = fieldValue(values, param.name) ?? "";
+    const field = readField(param, raw);
+    if (field === null) return [];
+    return [[param.name, "error" in field ? json.str(raw) : field.node]];
   });
-  return stringifyJson(json.obj(entries.filter(([, node]) => node.t !== "null")), 2);
+  return stringifyJson(json.obj(entries), 2);
 }

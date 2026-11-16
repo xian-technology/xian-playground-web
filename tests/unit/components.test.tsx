@@ -41,6 +41,12 @@ const run = (patch: Partial<RunRecord["outcome"]>, extra: Partial<RunRecord> = {
 });
 
 describe("KwargsForm", () => {
+  it("shows an untouched field named constructor as empty without a prototype error", async () => {
+    const param = { ...transfer.params[0]!, name: "constructor", required: false, defaultText: "'default'" };
+    renderWith(await startController(), <KwargsForm method={{ ...transfer, params: [param] }} values={{}} errors={{}} onChange={() => {}} />);
+    expect((screen.getByLabelText("constructor") as HTMLInputElement).value).toBe("");
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+  });
   it("shows each parameter with its type, defaults and errors, and submits on Enter", async () => {
     const onChange = vi.fn();
     const onSubmit = vi.fn();
@@ -75,6 +81,19 @@ describe("KwargsForm", () => {
 });
 
 describe("useKwargs", () => {
+  it("does not copy an inherited constructor value into the JSON editor", () => {
+    const param = { ...transfer.params[0]!, name: "constructor", required: false, defaultText: "'default'" };
+    const { result } = renderHook(() => useKwargs({ ...transfer, params: [param] }, "prototype"));
+    act(() => result.current.setMode("json"));
+    expect(result.current.jsonText).toBe("{}");
+  });
+  it("keeps an unset optional string at its default when switching to JSON", () => {
+    const param = { ...transfer.params[0]!, name: "recipient", required: false, defaultText: "'treasury'" };
+    const { result } = renderHook(() => useKwargs({ ...transfer, params: [param] }, "optional"));
+    expect(result.current.build()).toBe("{}");
+    act(() => result.current.setMode("json"));
+    expect(result.current.build()).toBe("{}");
+  });
   it("builds exact kwargs, reports field errors and switches to JSON with the form's values", () => {
     const { result, rerender } = renderHook(({ key }) => useKwargs(transfer, key), { initialProps: { key: "a" } });
     act(() => result.current.setValue("amount", "x"));

@@ -65,6 +65,11 @@ describe("parseField (one typed input to exact wire JSON)", () => {
     expect(() => field("any", "alice")).toThrow(/quotes/);
   });
 
+  it("accepts ordinary dictionary keys that resemble runtime wrapper names", () => {
+    expect(field("dict", '{"__proto__":"payload"}')).toBe('{"__proto__":"payload"}');
+    expect(field("dict", '{"__metadata__":1}')).toBe('{"__metadata__":1}');
+  });
+
   it("reads sets as their canonical wire envelope (the VM checks member order)", () => {
     const envelope = '{"__set__":{"codec":"xian-set-1","items":[["int","1"]]}}';
     expect(field("set", envelope)).toBe(envelope);
@@ -85,6 +90,22 @@ const transfer: ContractMethod = {
 };
 
 describe("buildKwargs", () => {
+  it("leaves an untouched optional field named constructor at its default", () => {
+    const method = { ...transfer, params: [{ ...transfer.params[2]!, name: "constructor", type: "str" as const }] };
+    const result = buildKwargs(method, {});
+    expect(result.ok && stringifyJson(result.kwargs)).toBe("{}");
+  });
+
+  it("reports a missing __proto__ field as an own error instead of dropping it", () => {
+    const method = { ...transfer, params: [{ ...transfer.params[1]!, name: "__proto__" }] };
+    const result = buildKwargs(method, {});
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(Object.hasOwn(result.errors, "__proto__")).toBe(true);
+      expect(result.errors.__proto__).toBe("Enter a value.");
+    }
+  });
+
   it("builds kwargs in parameter order and omits empty optional fields", () => {
     const result = buildKwargs(transfer, { to: "bob", amount: "25", memo: "" });
     expect(result.ok && stringifyJson(result.kwargs)).toBe('{"to":"bob","amount":25}');

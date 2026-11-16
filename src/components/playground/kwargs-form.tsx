@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { FieldValues } from "@/lib/contract/kwargs";
+import { fieldValue, type FieldValues } from "@/lib/contract/kwargs";
 import type { ContractMethod, MethodParam, ParamType } from "@/lib/contract/methods";
 import { cn } from "@/lib/utils";
 
@@ -49,8 +49,8 @@ export function KwargsForm({ method, values, errors, onChange, onSubmit }: Kwarg
         <ParamField
           key={param.name}
           param={param}
-          value={values[param.name] ?? ""}
-          error={errors[param.name]}
+          value={fieldValue(values, param.name) ?? ""}
+          error={fieldValue(errors, param.name)}
           onChange={(value) => onChange(param.name, value)}
           onSubmit={onSubmit}
         />
