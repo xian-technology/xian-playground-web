@@ -24,8 +24,8 @@ const TYPES = {
   ".woff2": "font/woff2",
 };
 
-function resolveFile(urlPath) {
-  const clean = normalize(decodeURIComponent(urlPath.split("?")[0]));
+function resolveFile(decodedPath) {
+  const clean = normalize(decodedPath);
   const candidate = join(root, clean);
   if (candidate !== root && !candidate.startsWith(root + sep)) return null;
   for (const path of [candidate, `${candidate}.html`, join(candidate, "index.html")]) {
@@ -39,7 +39,15 @@ function resolveFile(urlPath) {
 }
 
 createServer((req, res) => {
-  const file = resolveFile(req.url ?? "/");
+  let requestPath;
+  try {
+    requestPath = decodeURIComponent((req.url ?? "/").split("?")[0]);
+  } catch {
+    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Malformed request URI.");
+    return;
+  }
+  const file = resolveFile(requestPath);
   const target = file ?? join(root, "404.html");
   // Hashed build assets never change: cache them for a year, like production hosts should.
   const immutable = file !== null && file.includes(`${sep}_next${sep}static${sep}`);

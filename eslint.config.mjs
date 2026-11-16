@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "playwright-report/**",
     ".metrics/**",
     "target/**",
+    ".venv/**",
   ]),
 ]);
 
